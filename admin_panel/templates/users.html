@@ -1,0 +1,725 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Trading Bot Dashboard{% endblock %}
+{% block page_title %}👥 Users Management{% endblock %}
+{% block page_subtitle %}Manage and monitor all registered users{% endblock %}
+
+{% block header_actions %}
+<div class="filter-group">
+    <input type="text" id="search-users" class="search-input" placeholder="🔍 Search users...">
+    <button class="btn-danger" onclick="banAllUsers()" style="margin-left: 1rem;">
+        🚫 Ban All Users
+    </button>
+    <button class="btn-primary" onclick="unbanAllUsers()" style="margin-left: 0.5rem;">
+        ✅ Unban All Users
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Toast Notification Container -->
+<div id="toast-container"></div>
+
+<section>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>User ID</th>
+                    <th>API Keys</th>
+                    <th>Subscriptions</th>
+                    <th>Joined</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="users-tbody">
+                <tr><td colspan="6" class="loading" style="text-align:center;">Loading users...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- User Detail Modal -->
+<div id="userModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>👤 User Details</h2>
+            <span class="close" onclick="closeModal('userModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div id="userDetails">
+                <div class="detail-group">
+                    <label>Username:</label>
+                    <span id="detail-username">-</span>
+                </div>
+                <div class="detail-group">
+                    <label>User ID:</label>
+                    <span id="detail-userid">-</span>
+                </div>
+                <div class="detail-group">
+                    <label>Joined:</label>
+                    <span id="detail-joined">-</span>
+                </div>
+                <div class="detail-group">
+                    <label>Total Subscriptions:</label>
+                    <span id="detail-subs">-</span>
+                </div>
+            </div>
+            
+            <h3 style="margin-top: 2rem;">🔑 API Keys</h3>
+            <div id="apiKeysList">
+                <p style="color: var(--text-secondary);">Loading API keys...</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('userModal')">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- API Key Edit Modal -->
+<div id="editApiKeyModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>✏️ Edit API Key</h2>
+            <span class="close" onclick="closeModal('editApiKeyModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="editApiKeyForm">
+                <input type="hidden" id="edit-user-id">
+                <input type="hidden" id="edit-exchange">
+                
+                <div class="form-group">
+                    <label>Exchange</label>
+                    <input type="text" id="edit-exchange-display" disabled>
+                </div>
+                
+                <div class="form-group">
+                    <label>API Key / Wallet Address</label>
+                    <input type="text" id="edit-api-key" placeholder="Enter API key or wallet address">
+                </div>
+                
+                <div class="form-group">
+                    <label>Private Key / API Secret</label>
+                    <input type="password" id="edit-api-secret" placeholder="Enter private key or API secret">
+                    <small>⚠️ This will replace the existing key</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="edit-testnet">
+                        Use Testnet
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('editApiKeyModal')">Cancel</button>
+            <button class="btn-primary" onclick="saveApiKey()">💾 Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="modal">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>⚠️ Confirm Delete</h2>
+            <span class="close" onclick="closeModal('deleteModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete this API key?</p>
+            <p style="color: var(--danger); font-weight: 600;" id="delete-confirm-text"></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn-danger" onclick="confirmDelete()">🗑️ Delete</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let usersData = [];
+let currentUser = null;
+let currentApiKeys = [];
+let deleteTarget = null;
+
+// Toast Notification System
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+    toast.innerHTML = `
+        <span class="toast-icon">${icon}</span>
+        <span class="toast-message">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Animate in
+    setTimeout(() => toast.classList.add('toast-show'), 10);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        toast.classList.remove('toast-show');
+        setTimeout(() => toast.remove(), 300);
+    }, 5000);
+}
+
+async function loadUsers() {
+    try {
+        const response = await fetch('/api/users');
+        const data = await response.json();
+        usersData = data.users || [];
+        renderUsers(usersData);
+    } catch (error) {
+        console.error('Error loading users:', error);
+        showToast('Failed to load users', 'error');
+        document.getElementById('users-tbody').innerHTML = 
+            '<tr><td colspan="6" style="text-align:center; color: var(--danger);">Error loading users</td></tr>';
+    }
+}
+
+function renderUsers(users) {
+    const tbody = document.getElementById('users-tbody');
+    if (!users || users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No users found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = users.map(user => `
+        <tr ${user.is_banned ? 'style="opacity: 0.6; background: rgba(255, 59, 92, 0.1);"' : ''}>
+            <td>
+                <strong>${escapeHtml(user.username)}</strong>
+                ${user.is_banned ? '<span class="badge" style="background: var(--danger); margin-left: 8px;">🚫 BANNED</span>' : ''}
+            </td>
+            <td><code>${escapeHtml(user.user_id)}</code></td>
+            <td><span class="badge">${user.api_keys}</span></td>
+            <td><span class="badge">${user.subscriptions}</span></td>
+            <td>${formatDate(user.created_at)}</td>
+            <td>
+                <button class="btn-icon" title="View Details" onclick="viewUserDetails('${escapeHtml(user.user_id)}', '${escapeHtml(user.username)}')">👁️</button>
+                ${user.is_banned 
+                    ? `<button class="btn-small btn-success" onclick="unbanUser('${escapeHtml(user.user_id)}', '${escapeHtml(user.username)}')" style="margin-left: 4px;" title="Unban User">
+                        ✅ Unban
+                    </button>`
+                    : `<button class="btn-small btn-danger" onclick="banUser('${escapeHtml(user.user_id)}', '${escapeHtml(user.username)}')" style="margin-left: 4px;" title="Ban User">
+                        🚫 Ban
+                    </button>`
+                }
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function viewUserDetails(userId, username) {
+    currentUser = { user_id: userId, username: username };
+    
+    // Find user data
+    const user = usersData.find(u => u.user_id === userId);
+    
+    // Update modal
+    document.getElementById('detail-username').textContent = username;
+    document.getElementById('detail-userid').textContent = userId;
+    document.getElementById('detail-joined').textContent = user ? formatDate(user.created_at) : '-';
+    document.getElementById('detail-subs').textContent = user ? user.subscriptions : '-';
+    
+    // Load API keys
+    await loadUserApiKeys(userId);
+    
+    // Show modal
+    openModal('userModal');
+}
+
+async function loadUserApiKeys(userId) {
+    try {
+        const response = await fetch(`/api/users/${userId}/api-keys`);
+        const data = await response.json();
+        currentApiKeys = data.api_keys || [];
+        renderApiKeys(currentApiKeys);
+    } catch (error) {
+        console.error('Error loading API keys:', error);
+        showToast('Failed to load API keys', 'error');
+        document.getElementById('apiKeysList').innerHTML = 
+            '<p style="color: var(--danger);">Error loading API keys</p>';
+    }
+}
+
+function renderApiKeys(apiKeys) {
+    const container = document.getElementById('apiKeysList');
+    
+    if (!apiKeys || apiKeys.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary);">No API keys configured</p>';
+        return;
+    }
+    
+    container.innerHTML = apiKeys.map(key => `
+        <div class="api-key-card">
+            <div class="api-key-header">
+                <h4>🔑 ${escapeHtml(key.exchange)}</h4>
+                <span class="badge ${key.testnet ? 'badge-warning' : 'badge-success'}">
+                    ${key.testnet ? '🧪 Testnet' : '✅ Mainnet'}
+                </span>
+            </div>
+            <div class="api-key-details">
+                <div class="detail-row">
+                    <span class="detail-label">API Key:</span>
+                    <code class="blur-text" id="key-${escapeHtml(key.exchange)}">${maskKey(key.api_key)}</code>
+                    <button class="btn-icon-small" onclick="toggleBlur('key-${escapeHtml(key.exchange)}')" title="Show/Hide">👁️</button>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Created:</span>
+                    <span>${formatDate(key.created_at)}</span>
+                </div>
+            </div>
+            <div class="api-key-actions">
+                <button class="btn-small btn-primary" onclick="editApiKey('${escapeHtml(key.exchange)}')">✏️ Edit</button>
+                <button class="btn-small btn-danger" onclick="deleteApiKey('${escapeHtml(key.exchange)}')">🗑️ Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function maskKey(key) {
+    if (!key || key.length < 8) return '****';
+    return key.substring(0, 6) + '...' + key.substring(key.length - 4);
+}
+
+function toggleBlur(elementId) {
+    const element = document.getElementById(elementId);
+    element.classList.toggle('blur-text');
+}
+
+function editApiKey(exchange) {
+    const apiKey = currentApiKeys.find(k => k.exchange === exchange);
+    if (!apiKey) return;
+    
+    document.getElementById('edit-user-id').value = currentUser.user_id;
+    document.getElementById('edit-exchange').value = exchange;
+    document.getElementById('edit-exchange-display').value = exchange;
+    document.getElementById('edit-api-key').value = apiKey.api_key || '';
+    document.getElementById('edit-api-secret').value = '';
+    document.getElementById('edit-testnet').checked = apiKey.testnet || false;
+    
+    closeModal('userModal');
+    openModal('editApiKeyModal');
+}
+
+async function saveApiKey() {
+    const userId = document.getElementById('edit-user-id').value;
+    const exchange = document.getElementById('edit-exchange').value;
+    const apiKey = document.getElementById('edit-api-key').value;
+    const apiSecret = document.getElementById('edit-api-secret').value;
+    const testnet = document.getElementById('edit-testnet').checked;
+    
+    if (!apiKey) {
+        showToast('API Key is required!', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/users/${userId}/api-keys/${exchange}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                exchange,
+                api_key: apiKey,
+                api_secret: apiSecret,
+                testnet
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            showToast(`API Key for ${exchange.toUpperCase()} updated successfully!`, 'success');
+            closeModal('editApiKeyModal');
+            await loadUserApiKeys(userId);
+            openModal('userModal');
+        } else {
+            showToast('Error: ' + (result.error || 'Failed to update API key'), 'error');
+        }
+    } catch (error) {
+        console.error('Error saving API key:', error);
+        showToast('Error saving API key', 'error');
+    }
+}
+
+function deleteApiKey(exchange) {
+    deleteTarget = { exchange, userId: currentUser.user_id };
+    document.getElementById('delete-confirm-text').textContent = `${exchange} for ${currentUser.username}`;
+    closeModal('userModal');
+    openModal('deleteModal');
+}
+
+async function confirmDelete() {
+    if (!deleteTarget) return;
+    
+    try {
+        const response = await fetch(`/api/users/${deleteTarget.userId}/api-keys/${deleteTarget.exchange}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            showToast(`API Key for ${deleteTarget.exchange.toUpperCase()} deleted successfully!`, 'success');
+            closeModal('deleteModal');
+            await loadUserApiKeys(deleteTarget.userId);
+            await loadUsers(); // Refresh user list
+            openModal('userModal');
+        } else {
+            showToast('Error: ' + (result.error || 'Failed to delete API key'), 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting API key:', error);
+        showToast('Error deleting API key', 'error');
+    }
+}
+
+// Modal functions
+function openModal(modalId) {
+    document.getElementById(modalId).style.display = 'block';
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+// Search functionality
+document.addEventListener('DOMContentLoaded', () => {
+    loadUsers();
+    
+    const searchInput = document.getElementById('search-users');
+    searchInput?.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const filtered = usersData.filter(user => 
+            user.username.toLowerCase().includes(searchTerm) ||
+            user.user_id.toLowerCase().includes(searchTerm)
+        );
+        renderUsers(filtered);
+    });
+    
+    // Close modal on outside click
+    window.onclick = (event) => {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    };
+});
+
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+    toast.innerHTML = `
+        <span class="toast-icon">${icon}</span>
+        <span class="toast-message">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+    `;
+    
+    container.appendChild(toast);
+    setTimeout(() => toast.classList.add('toast-show'), 10);
+    
+    setTimeout(() => {
+        toast.classList.remove('toast-show');
+        setTimeout(() => toast.remove(), 300);
+    }, 5000);
+}
+
+function showBanConfirmation(userId, username) {
+    // Remove any existing ban/unban confirmation modals only
+    const existingBanModal = document.getElementById('banConfirmModal');
+    if (existingBanModal) {
+        existingBanModal.remove();
+    }
+    const existingUnbanModal = document.getElementById('unbanConfirmModal');
+    if (existingUnbanModal) {
+        existingUnbanModal.remove();
+    }
+    
+    // Create custom confirmation modal
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.id = 'banConfirmModal';
+    
+    // Add click outside to close
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeBanModal();
+        }
+    });
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;" onclick="event.stopPropagation();">
+            <div class="modal-header">
+                <h2>⚠️ Confirm Ban Action</h2>
+            </div>
+            <div class="modal-body">
+                <p><strong>Ban user "${username}"?</strong></p>
+                <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 6px; margin: 15px 0;">
+                    <p style="margin: 0; color: #856404;"><strong>This will:</strong></p>
+                    <ul style="margin: 10px 0 0 20px; color: #856404;">
+                        <li>Prevent them from using the bot</li>
+                        <li>Block all trading commands</li>
+                        <li>Skip them in trade execution</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="event.stopPropagation(); closeBanModal();" type="button">Cancel</button>
+                <button class="btn-danger" onclick="event.stopPropagation(); confirmBan('${userId}', '${username}');" type="button">🚫 Yes, Ban User</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Ensure modal is fully rendered before allowing interactions
+    setTimeout(() => {
+        console.log('Ban modal ready for interaction');
+    }, 10);
+}
+
+function confirmBan(userId, username) {
+    console.log('confirmBan called from template for:', username);
+    
+    // Close the confirmation modal IMMEDIATELY and synchronously
+    closeBanModal();
+    
+    // Execute the ban operation asynchronously without blocking the modal closing
+    executeBan(userId, username);
+}
+
+async function executeBan(userId, username) {
+    try {
+        const response = await fetch(`/api/users/${userId}/ban`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ User "${username}" banned successfully`, 'success');
+            await loadUsers(); // Reload to show updated status
+        } else {
+            showToast(`❌ ${data.error || 'Failed to ban user'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error banning user:', error);
+        showToast('❌ Error banning user', 'error');
+    }
+}
+
+function closeBanModal() {
+    console.log('closeBanModal called from template');
+    
+    // Only look for ban confirmation modal specifically
+    const modal = document.getElementById('banConfirmModal');
+    
+    if (modal) {
+        console.log('Found ban modal, removing...');
+        modal.style.display = 'none'; // Hide immediately
+        modal.remove(); // Then remove from DOM
+        console.log('Ban modal removed successfully');
+    } else {
+        console.log('No ban modal found to close');
+    }
+}
+
+async function banUser(userId, username) {
+    showBanConfirmation(userId, username);
+}
+
+async function unbanUser(userId, username) {
+    showUnbanConfirmation(userId, username);
+}
+
+function showUnbanConfirmation(userId, username) {
+    // Remove any existing ban/unban confirmation modals only
+    const existingBanModal = document.getElementById('banConfirmModal');
+    if (existingBanModal) {
+        existingBanModal.remove();
+    }
+    const existingUnbanModal = document.getElementById('unbanConfirmModal');
+    if (existingUnbanModal) {
+        existingUnbanModal.remove();
+    }
+    
+    // Create custom confirmation modal
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.id = 'unbanConfirmModal';
+    
+    // Add click outside to close
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeUnbanModal();
+        }
+    });
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;" onclick="event.stopPropagation();">
+            <div class="modal-header">
+                <h2>✅ Confirm Unban Action</h2>
+            </div>
+            <div class="modal-body">
+                <p><strong>Unban user "${username}"?</strong></p>
+                <div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 6px; margin: 15px 0;">
+                    <p style="margin: 0; color: #0c5460;"><strong>This will:</strong></p>
+                    <ul style="margin: 10px 0 0 20px; color: #0c5460;">
+                        <li>Allow them to use the bot again</li>
+                        <li>Restore access to all commands</li>
+                        <li>Include them in trade execution</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="event.stopPropagation(); closeUnbanModal();" type="button">Cancel</button>
+                <button class="btn-success" onclick="event.stopPropagation(); confirmUnban('${userId}', '${username}');" type="button">✅ Yes, Unban User</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Ensure modal is fully rendered before allowing interactions
+    setTimeout(() => {
+        console.log('Unban modal ready for interaction');
+    }, 10);
+}
+
+function closeUnbanModal() {
+    console.log('closeUnbanModal called from template');
+    
+    // Only look for unban confirmation modal specifically
+    const modal = document.getElementById('unbanConfirmModal');
+    
+    if (modal) {
+        console.log('Found unban modal, removing...');
+        modal.style.display = 'none'; // Hide immediately
+        modal.remove(); // Then remove from DOM
+        console.log('Unban modal removed successfully');
+    } else {
+        console.log('No unban modal found to close');
+    }
+}
+
+function confirmUnban(userId, username) {
+    console.log('confirmUnban called from template for:', username);
+    
+    // Close the confirmation modal IMMEDIATELY and synchronously
+    closeUnbanModal();
+    
+    // Execute the unban operation asynchronously without blocking the modal closing
+    executeUnban(userId, username);
+}
+
+async function executeUnban(userId, username) {
+    try {
+        const response = await fetch(`/api/users/${userId}/unban`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ User "${username}" unbanned successfully`, 'success');
+            await loadUsers(); // Reload to show updated status
+        } else {
+            showToast(`❌ ${data.error || 'Failed to unban user'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error unbanning user:', error);
+        showToast('❌ Error unbanning user', 'error');
+    }
+}
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = text.toString();
+    return div.innerHTML;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+// Ban/Unban all users
+async function banAllUsers() {
+    if (!confirm(`⚠️ Ban ALL ${usersData.length} users?\n\nThis will prevent all users from trading. Are you sure?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/users/ban-all', {
+            method: 'POST'
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(`✅ Successfully banned ${result.banned_count} users`, 'success');
+            loadUsers(); // Refresh the list
+        } else {
+            showToast('❌ Error: ' + (result.error || 'Failed to ban users'), 'error');
+        }
+    } catch (error) {
+        console.error('Error banning all users:', error);
+        showToast('❌ Error banning users', 'error');
+    }
+}
+
+async function unbanAllUsers() {
+    if (!confirm(`✅ Unban ALL users?\n\nThis will allow all users to trade again. Are you sure?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/users/unban-all', {
+            method: 'POST'
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(`✅ Successfully unbanned ${result.unbanned_count} users`, 'success');
+            loadUsers(); // Refresh the list
+        } else {
+            showToast('❌ Error: ' + (result.error || 'Failed to unban users'), 'error');
+        }
+    } catch (error) {
+        console.error('Error unbanning all users:', error);
+        showToast('❌ Error unbanning users', 'error');
+    }
+}
+
+// Add ESC key functionality to close confirmation modals only
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        // Only close ban/unban confirmation modals, not user details modal
+        const banModal = document.getElementById('banConfirmModal');
+        const unbanModal = document.getElementById('unbanConfirmModal');
+        
+        if (banModal) {
+            closeBanModal();
+        } else if (unbanModal) {
+            closeUnbanModal();
+        }
+    }
+});
+</script>
+{% endblock %}

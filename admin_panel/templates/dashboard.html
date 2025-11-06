@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="/static/js/dashboard.js?v=2.0" defer></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <header>
+            <h1>⚡ Trading Bot Dashboard</h1>
+            <nav>
+                <span class="user-info">👋 Welcome, {{ user }}</span>
+                <a href="/logout" class="logout-btn">Logout</a>
+            </nav>
+        </header>
+        <main>
+            <!-- NEW FEATURES BANNER -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+                <strong>🎉 NEW FEATURES ADDED!</strong> Analytics • System Health • Active Trades • Risk Overview
+            </div>
+            
+            <!-- Statistics Overview -->
+            <section id="stats-overview">
+                <h2>📊 Overview Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>💰 Total Users</h3>
+                        <p id="stat-users" class="stat-value loading">-</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>📈 Active Subscriptions</h3>
+                        <p id="stat-subscriptions" class="stat-value loading">-</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>📡 Signal Channels</h3>
+                        <p id="stat-channels" class="stat-value loading">-</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>💹 Active Trades</h3>
+                        <p id="stat-trades" class="stat-value loading">-</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NEW: Analytics Dashboard -->
+            <section id="analytics-section">
+                <h2>📊 Performance Analytics (30 Days)</h2>
+                <div class="stats-grid">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <h3>🎯 Win Rate</h3>
+                        <p id="analytics-winrate" class="stat-value">-</p>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                        <h3>💰 Net P&L</h3>
+                        <p id="analytics-pnl" class="stat-value">-</p>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                        <h3>📈 Profit Factor</h3>
+                        <p id="analytics-pf" class="stat-value">-</p>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white;">
+                        <h3>💹 Total Trades</h3>
+                        <p id="analytics-total" class="stat-value">-</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NEW: System Health -->
+            <section id="health-section">
+                <h2>🖥️ System Health</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>⚡ CPU Usage</h3>
+                        <p id="health-cpu" class="stat-value loading">-</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>💾 Memory Usage</h3>
+                        <p id="health-memory" class="stat-value loading">-</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>💿 Disk Usage</h3>
+                        <p id="health-disk" class="stat-value loading">-</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>⏱️ Uptime</h3>
+                        <p id="health-uptime" class="stat-value loading">-</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NEW: Active Trades Monitor -->
+            <section id="active-trades-section">
+                <h2>🔥 Active Trades Monitor</h2>
+                <div id="active-trades-container">
+                    <p class="loading">Loading active trades...</p>
+                </div>
+            </section>
+
+            <!-- NEW: Risk Overview -->
+            <section id="risk-section">
+                <h2>⚠️ Risk Overview</h2>
+                <div id="risk-container">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>💼 Total Exposure</h3>
+                            <p id="risk-exposure" class="stat-value">-</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>👥 Users with Positions</h3>
+                            <p id="risk-users" class="stat-value">-</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>📊 Symbols Traded</h3>
+                            <p id="risk-symbols" class="stat-value">-</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>📈 Avg Leverage</h3>
+                            <p id="risk-leverage" class="stat-value">-</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Users Management -->
+            <section id="users-section">
+                <h2>👥 Users Management</h2>
+                <div id="users-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>User ID</th>
+                                <th>API Keys</th>
+                                <th>Subscriptions</th>
+                                <th>Joined</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody">
+                            <tr><td colspan="5" class="loading">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Channels Management -->
+            <section id="channels-section">
+                <h2>📡 Signal Channels</h2>
+                <div id="channels-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Channel Name</th>
+                                <th>Channel ID</th>
+                                <th>Subscribers</th>
+                                <th>Signal Channel</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="channels-tbody">
+                            <tr><td colspan="5" class="loading">Loading channels...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Subscriptions Management -->
+            <section id="subscriptions-section">
+                <h2>⚡ Active Subscriptions</h2>
+                <div id="subscriptions-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Channel</th>
+                                <th>Exchange</th>
+                                <th>Position Mode</th>
+                                <th>Position Size</th>
+                                <th>Max Risk</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="subscriptions-tbody">
+                            <tr><td colspan="7" class="loading">Loading subscriptions...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Recent Trades -->
+            <section id="trades-section">
+                <h2>💹 Recent Trades</h2>
+                <div id="trades-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Entry Price</th>
+                                <th>Quantity</th>
+                                <th>Status</th>
+                                <th>PnL</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-tbody">
+                            <tr><td colspan="8" class="loading">Loading trades...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

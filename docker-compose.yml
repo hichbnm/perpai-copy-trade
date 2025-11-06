@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: trading-bot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trading_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-trader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trader} -d ${POSTGRES_DB:-trading_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Discord Trading Bot Service
+  trading-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discord-trading-bot
+    restart: unless-stopped
+    environment:
+      # Discord Configuration
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      
+      # PostgreSQL Database
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD:-secure_password_change_me}@postgres:5432/${POSTGRES_DB:-trading_bot}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-trading_bot}
+      - POSTGRES_USER=${POSTGRES_USER:-trader}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password_change_me}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # Bot Configuration
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persist logs
+      - ./logs:/app/logs
+      # Mount .env file
+      - ./.env:/app/.env:ro
+    networks:
+      - trading-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: python main.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import psycopg2; conn = psycopg2.connect('${DATABASE_URL}'); conn.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Admin Panel Service
+  admin-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-bot-admin
+    restart: unless-stopped
+    environment:
+      # Admin Panel Configuration
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:-your-secret-key-here}
+      
+      # PostgreSQL Database
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD:-secure_password_change_me}@postgres:5432/${POSTGRES_DB:-trading_bot}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-trading_bot}
+      - POSTGRES_USER=${POSTGRES_USER:-trader}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password_change_me}
+      
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=80
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # Persist logs
+      - ./logs:/app/logs
+      # Mount .env file
+      - ./.env:/app/.env:ro
+    ports:
+      - "80:80"
+    networks:
+      - trading-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trading-bot:
+        condition: service_started
+    command: python run_admin_panel.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/bot_status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  trading-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  bot-logs:
+    driver: local

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Trading Bot Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="/static/shadur.png" alt="Logo" class="logo-icon">
+                    <span class="logo-text">Trading Bot</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="/dashboard" class="nav-item {% if active_page == 'overview' %}active{% endif %}">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Overview</span>
+                </a>
+                <a href="/users" class="nav-item {% if active_page == 'users' %}active{% endif %}">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Users</span>
+                </a>
+                <a href="/channels" class="nav-item {% if active_page == 'channels' %}active{% endif %}">
+                    <span class="nav-icon">📡</span>
+                    <span class="nav-text">Channels</span>
+                </a>
+                <a href="/subscriptions" class="nav-item {% if active_page == 'subscriptions' %}active{% endif %}">
+                    <span class="nav-icon">⚡</span>
+                    <span class="nav-text">Subscriptions</span>
+                </a>
+                <a href="/trades" class="nav-item {% if active_page == 'trades' %}active{% endif %}">
+                    <span class="nav-icon">💹</span>
+                    <span class="nav-text">Trades</span>
+                </a>
+                <a href="/analytics" class="nav-item {% if active_page == 'analytics' %}active{% endif %}">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-text">Analytics</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">👤</div>
+                    <div class="user-info">
+                        <div class="user-name">{{ user }}</div>
+                        <div class="user-role">Admin</div>
+                    </div>
+                </div>
+                <a href="/logout" class="logout-link">
+                    <span class="nav-icon">🚪</span>
+                    <span class="nav-text">Logout</span>
+                </a>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="page-header">
+                <div class="page-title">
+                    <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+                    <p class="page-subtitle">{% block page_subtitle %}Welcome to your trading dashboard{% endblock %}</p>
+                </div>
+                <div class="header-actions">
+                    {% block header_actions %}
+                    <button class="btn-secondary" onclick="location.reload()">
+                        🔄 Refresh
+                    </button>
+                    {% endblock %}
+                </div>
+            </header>
+            
+            <div class="page-content">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

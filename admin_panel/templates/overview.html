@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Overview - Trading Bot Dashboard{% endblock %}
+{% block page_title %}📊 Overview{% endblock %}
+{% block page_subtitle %}Real-time statistics and performance metrics{% endblock %}
+
+{% block content %}
+<!-- NEW FEATURES BANNER -->
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+    <strong>🎉 NEW FEATURES!</strong> Analytics • System Health • Active Trades • Risk Overview
+</div>
+
+<!-- Statistics Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>💰 Total Users</h3>
+        <p id="stat-users" class="stat-value loading">-</p>
+        <span class="stat-change positive">+12% from last month</span>
+    </div>
+    <div class="stat-card">
+        <h3>📈 Active Subscriptions</h3>
+        <p id="stat-subscriptions" class="stat-value loading">-</p>
+        <span class="stat-change positive">+8% from last month</span>
+    </div>
+    <div class="stat-card">
+        <h3>📡 Signal Channels</h3>
+        <p id="stat-channels" class="stat-value loading">-</p>
+        <span class="stat-change neutral">No change</span>
+    </div>
+    <div class="stat-card">
+        <h3>💹 Active Trades</h3>
+        <p id="stat-trades" class="stat-value loading">-</p>
+        <span class="stat-change positive">Live positions</span>
+    </div>
+</div>
+
+<!-- NEW: Performance Analytics (30 Days) -->
+<section style="margin: 2rem 0;">
+    <h2>📊 Performance Analytics (30 Days)</h2>
+    <div class="stats-grid">
+        <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <h3>🎯 Win Rate</h3>
+            <p id="analytics-winrate" class="stat-value">-</p>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+            <h3>💰 Net P&L</h3>
+            <p id="analytics-pnl" class="stat-value">-</p>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+            <h3>📈 Profit Factor</h3>
+            <p id="analytics-pf" class="stat-value">-</p>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white;">
+            <h3>💹 Total Trades</h3>
+            <p id="analytics-total" class="stat-value">-</p>
+        </div>
+    </div>
+</section>
+
+<!-- NEW: System Health -->
+<section style="margin: 2rem 0;">
+    <h2>🖥️ System Health</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>⚡ CPU Usage</h3>
+            <p id="health-cpu" class="stat-value loading">-</p>
+        </div>
+        <div class="stat-card">
+            <h3>💾 Memory Usage</h3>
+            <p id="health-memory" class="stat-value loading">-</p>
+        </div>
+        <div class="stat-card">
+            <h3>💿 Disk Usage</h3>
+            <p id="health-disk" class="stat-value loading">-</p>
+        </div>
+        <div class="stat-card">
+            <h3>⏱️ Uptime</h3>
+            <p id="health-uptime" class="stat-value loading">-</p>
+        </div>
+    </div>
+</section>
+
+<!-- NEW: Active Trades Monitor -->
+<section style="margin: 2rem 0;">
+    <h2>🔥 Active Trades Monitor</h2>
+    <div id="active-trades-container" style="background: var(--bg-card); padding: 1.5rem; border-radius: 12px;">
+        <p class="loading">Loading active trades...</p>
+    </div>
+</section>
+
+<!-- NEW: Risk Overview -->
+<section style="margin: 2rem 0;">
+    <h2>⚠️ Risk Overview</h2>
+    <div id="risk-container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>💼 Total Exposure</h3>
+                <p id="risk-exposure" class="stat-value">-</p>
+            </div>
+            <div class="stat-card">
+                <h3>👥 Users with Positions</h3>
+                <p id="risk-users" class="stat-value">-</p>
+            </div>
+            <div class="stat-card">
+                <h3>📊 Symbols Traded</h3>
+                <p id="risk-symbols" class="stat-value">-</p>
+            </div>
+            <div class="stat-card">
+                <h3>📈 Avg Leverage</h3>
+                <p id="risk-leverage" class="stat-value">-</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Quick Stats Cards -->
+<div class="dashboard-grid">
+    <!-- Chart Placeholder -->
+    <section class="chart-card">
+        <h2>📈 Trading Activity</h2>
+        <div id="trading-chart" class="chart-placeholder">
+            <p style="text-align:center; color: var(--text-secondary); padding: 4rem 0;">Chart visualization coming soon...</p>
+        </div>
+    </section>
+    
+    <!-- Recent Activity -->
+    <section class="activity-card">
+        <h2>⚡ Recent Activity</h2>
+        <div id="recent-activity" class="activity-list">
+            <p style="text-align:center; color: var(--text-secondary); padding: 2rem 0;">Loading recent activity...</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+console.log('🚀 Overview.js loaded - Version 2.0 with NEW FEATURES!');
+
+window.addEventListener('DOMContentLoaded', async () => {
+    console.log('✅ DOM loaded, loading all data...');
+    
+    try {
+        // Load basic stats
+        const response = await fetch('/api/bot_status');
+        const data = await response.json();
+        
+        document.getElementById('stat-users').textContent = data.total_users || 0;
+        document.getElementById('stat-subscriptions').textContent = data.total_subscriptions || 0;
+        document.getElementById('stat-channels').textContent = data.total_channels || 0;
+        document.getElementById('stat-trades').textContent = data.active_trades || 0;
+        
+        console.log('✅ Basic stats loaded');
+    } catch (error) {
+        console.error('❌ Error loading statistics:', error);
+    }
+    
+    // Load Analytics
+    try {
+        console.log('📊 Loading analytics...');
+        const analyticsRes = await fetch('/api/analytics/overview');
+        const analyticsData = await analyticsRes.json();
+        
+        if (analyticsData.last_30_days) {
+            const metrics = analyticsData.last_30_days;
+            document.getElementById('analytics-winrate').textContent = 
+                metrics.win_rate ? `${metrics.win_rate.toFixed(1)}%` : '-';
+            document.getElementById('analytics-pnl').textContent = 
+                metrics.net_pnl ? `$${metrics.net_pnl.toFixed(2)}` : '$0';
+            document.getElementById('analytics-pf').textContent = 
+                metrics.profit_factor ? metrics.profit_factor.toFixed(2) : '-';
+            document.getElementById('analytics-total').textContent = 
+                metrics.total_trades || 0;
+            console.log('✅ Analytics loaded:', metrics);
+        }
+    } catch (error) {
+        console.error('❌ Error loading analytics:', error);
+    }
+    
+    // Load System Health
+    try {
+        console.log('🖥️ Loading system health...');
+        const healthRes = await fetch('/api/system/health');
+        const healthData = await healthRes.json();
+        
+        document.getElementById('health-cpu').textContent = `${healthData.cpu_usage}%`;
+        document.getElementById('health-memory').textContent = `${healthData.memory_usage}%`;
+        document.getElementById('health-disk').textContent = `${healthData.disk_usage}%`;
+        document.getElementById('health-uptime').textContent = healthData.uptime || '-';
+        console.log('✅ System health loaded:', healthData);
+    } catch (error) {
+        console.error('❌ Error loading system health:', error);
+    }
+    
+    // Load Active Trades
+    try {
+        console.log('🔥 Loading active trades...');
+        const tradesRes = await fetch('/api/trades/active');
+        const tradesData = await tradesRes.json();
+        
+        const container = document.getElementById('active-trades-container');
+        
+        if (!tradesData.trades || tradesData.trades.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #888;">No active trades</p>';
+        } else {
+            container.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <th style="padding: 12px; text-align: left;">Symbol</th>
+                            <th style="padding: 12px; text-align: left;">Side</th>
+                            <th style="padding: 12px; text-align: left;">Entry</th>
+                            <th style="padding: 12px; text-align: left;">Size</th>
+                            <th style="padding: 12px; text-align: left;">Leverage</th>
+                            <th style="padding: 12px; text-align: left;">TP</th>
+                            <th style="padding: 12px; text-align: left;">SL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tradesData.trades.map(trade => `
+                            <tr style="border-bottom: 1px solid var(--border-color);">
+                                <td style="padding: 12px;"><strong>${trade.symbol}</strong></td>
+                                <td style="padding: 12px;">
+                                    <span style="padding: 4px 8px; border-radius: 4px; background: ${trade.side === 'long' ? 'var(--success)' : 'var(--danger)'}; color: #000; font-weight: 600;">
+                                        ${trade.side.toUpperCase()}
+                                    </span>
+                                </td>
+                                <td style="padding: 12px;">$${parseFloat(trade.entry_price).toFixed(2)}</td>
+                                <td style="padding: 12px;">${trade.position_size}</td>
+                                <td style="padding: 12px;">${trade.leverage}x</td>
+                                <td style="padding: 12px; color: var(--success);">$${parseFloat(trade.take_profit).toFixed(2)}</td>
+                                <td style="padding: 12px; color: var(--danger);">$${parseFloat(trade.stop_loss).toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            console.log(`✅ Loaded ${tradesData.trades.length} active trades`);
+        }
+    } catch (error) {
+        console.error('❌ Error loading active trades:', error);
+    }
+    
+    // Load Risk Overview
+    try {
+        console.log('⚠️ Loading risk overview...');
+        const riskRes = await fetch('/api/risk/overview');
+        const riskData = await riskRes.json();
+        
+        document.getElementById('risk-exposure').textContent = 
+            `$${riskData.total_exposure ? riskData.total_exposure.toFixed(2) : '0'}`;
+        document.getElementById('risk-users').textContent = 
+            riskData.by_user ? Object.keys(riskData.by_user).length : 0;
+        document.getElementById('risk-symbols').textContent = 
+            riskData.by_symbol ? Object.keys(riskData.by_symbol).length : 0;
+        
+        // Calculate average leverage
+        let totalLeverage = 0;
+        let count = 0;
+        if (riskData.by_user) {
+            Object.values(riskData.by_user).forEach(user => {
+                if (user.avg_leverage) {
+                    totalLeverage += user.avg_leverage;
+                    count++;
+                }
+            });
+        }
+        document.getElementById('risk-leverage').textContent = 
+            count > 0 ? `${(totalLeverage / count).toFixed(1)}x` : '-';
+        
+        console.log('✅ Risk overview loaded:', riskData);
+    } catch (error) {
+        console.error('❌ Error loading risk overview:', error);
+    }
+    
+    // Remove loading class from all elements
+    document.querySelectorAll('.loading').forEach(el => el.classList.remove('loading'));
+    
+    console.log('🎉 All data loaded successfully!');
+});
+
+// Auto-refresh every 30 seconds
+setInterval(() => {
+    console.log('🔄 Auto-refreshing data...');
+    window.location.reload();
+}, 30000);
+</script>
+{% endblock %}

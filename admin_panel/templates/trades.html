@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Trades - Trading Bot Dashboard{% endblock %}
+{% block page_title %}💹 Trade History{% endblock %}
+{% block page_subtitle %}Monitor all trading activity and performance{% endblock %}
+
+{% block header_actions %}
+<div class="filter-group">
+    <select id="filter-status" class="filter-select">
+        <option value="all">All Trades</option>
+        <option value="open">Open Positions</option>
+        <option value="closed">Closed Positions</option>
+    </select>
+    <select id="filter-side" class="filter-select">
+        <option value="all">All Sides</option>
+        <option value="long">Long Only</option>
+        <option value="short">Short Only</option>
+    </select>
+    <button class="btn-secondary" onclick="location.reload()">🔄 Refresh</button>
+    <button class="btn-primary" onclick="exportTrades()">📥 Export CSV</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<section>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Symbol</th>
+                    <th>Side</th>
+                    <th>Entry Price</th>
+                    <th>Quantity</th>
+                    <th>Status</th>
+                    <th>PnL</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="trades-tbody">
+                <tr><td colspan="9" class="loading" style="text-align:center;">Loading trades...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Trade Details Modal -->
+<div id="tradeDetailsModal" class="modal" onclick="closeTradeDetailsModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>📊 Trade Details</h3>
+            <span class="close" onclick="closeTradeDetailsModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div class="detail-grid">
+                <div class="detail-section">
+                    <h4>🏷️ Basic Information</h4>
+                    <div class="detail-row">
+                        <label>Username:</label>
+                        <span id="detail-username" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Symbol:</label>
+                        <span id="detail-symbol" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Exchange:</label>
+                        <span id="detail-exchange" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Side:</label>
+                        <span id="detail-side" class="detail-value badge"></span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4>💰 Trade Information</h4>
+                    <div class="detail-row">
+                        <label>Entry Price:</label>
+                        <span id="detail-entry-price" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Quantity:</label>
+                        <span id="detail-quantity" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Status:</label>
+                        <span id="detail-status" class="detail-value badge"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>PnL:</label>
+                        <span id="detail-pnl" class="detail-value pnl"></span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4>🎯 Risk Management</h4>
+                    <div class="detail-row">
+                        <label>Stop Loss:</label>
+                        <span id="detail-stop-loss" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Take Profit:</label>
+                        <span id="detail-take-profit" class="detail-value"></span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4>📅 Metadata</h4>
+                    <div class="detail-row">
+                        <label>Created:</label>
+                        <span id="detail-created" class="detail-value"></span>
+                    </div>
+                    <div class="detail-row">
+                        <label>Message ID:</label>
+                        <span id="detail-message-id" class="detail-value"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeTradeDetailsModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/trades.js"></script>
+{% endblock %}

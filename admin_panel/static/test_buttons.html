@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Ban Buttons</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .btn-small { padding: 6px 12px; margin: 4px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-danger { background: #ff3b5c; color: white; }
+        .btn-success { background: #00d4aa; color: white; }
+        .btn-primary { background: #5865F2; color: white; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; color: white; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #5865F2; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Ban/Unban Buttons</h1>
+    <p>This page tests if the ban buttons render correctly.</p>
+    
+    <table id="test-table">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>User ID</th>
+                <th>API Keys</th>
+                <th>Subscriptions</th>
+                <th>Joined</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="users-tbody">
+        </tbody>
+    </table>
+
+    <script>
+        // Test data - one normal user and one banned user
+        const testUsers = [
+            {
+                user_id: '123456789',
+                username: 'TestUser',
+                created_at: '2025-10-05 02:19:55',
+                is_banned: false,
+                subscriptions: 3,
+                api_keys: 1
+            },
+            {
+                user_id: '987654321',
+                username: 'BannedUser',
+                created_at: '2025-10-04 10:00:00',
+                is_banned: true,
+                subscriptions: 5,
+                api_keys: 2
+            }
+        ];
+
+        function renderUsers(users) {
+            const tbody = document.getElementById('users-tbody');
+            tbody.innerHTML = users.map(user => `
+                <tr ${user.is_banned ? 'style="opacity: 0.6; background: rgba(255, 59, 92, 0.1);"' : ''}>
+                    <td>
+                        ${user.username}
+                        ${user.is_banned ? '<span class="badge" style="background: #ff3b5c; margin-left: 8px;">🚫 BANNED</span>' : ''}
+                    </td>
+                    <td><code>${user.user_id}</code></td>
+                    <td>
+                        <span class="badge" style="background: #00d4aa;">
+                            ${user.api_keys || 0} keys
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge" style="background: #5865F2;">
+                            ${user.subscriptions || 0} subs
+                        </span>
+                    </td>
+                    <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                    <td>
+                        <button class="btn-small btn-primary" onclick="alert('View user: ' + '${user.user_id}')">
+                            👁️ View
+                        </button>
+                        ${user.is_banned 
+                            ? `<button class="btn-small btn-success" onclick="alert('Unban user: ${user.username}')" style="margin-left: 4px;">
+                                ✅ Unban
+                            </button>`
+                            : `<button class="btn-small btn-danger" onclick="alert('Ban user: ${user.username}')" style="margin-left: 4px;">
+                                🚫 Ban
+                            </button>`
+                        }
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Render test users
+        renderUsers(testUsers);
+        
+        console.log('✅ Test page loaded');
+        console.log('Test users:', testUsers);
+    </script>
+</body>
+</html>

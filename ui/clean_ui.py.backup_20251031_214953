@@ -1,0 +1,4036 @@
+import discord
+from discord.ext import commands
+from discord import app_commands
+import logging
+
+logger = logging.getLogger(__name__)
+
+async def check_api_key_required(interaction: discord.Interaction, bot) -> bool:
+    """Check if user has API key and is not banned, show appropriate message if not"""
+    user_id = str(interaction.user.id)
+    
+    # Add user to database if not exists
+    bot.db.add_user(user_id, interaction.user.name)
+    
+    # Check if user is banned FIRST
+    if bot.db.is_user_banned(user_id):
+        banned_message = (
+            f"🚫 **ACCESS DENIED**\n\n"
+            f"❌ **Your account has been banned**\n\n"
+            f"You cannot use this bot. If you believe this is a mistake, please contact the administrator.\n\n"
+            f"📧 **For appeals, contact server staff.**"
+        )
+        await interaction.response.edit_message(content=banned_message, embed=None, view=None)
+        return False
+    
+    # Check for API keys using DatabaseManager
+    api_keys = bot.db.get_user_all_api_keys(user_id)
+    
+    if not api_keys:
+        # No API key found - show setup message in same location
+        setup_message = (
+            f"🔒 **API KEY REQUIRED**\n\n"
+            f"Hi {interaction.user.mention}, you need to add your API key first!\n\n"
+            f"**🛠️ Setup Steps:**\n"
+            f"1️⃣ Use `/add_api_key` command\n"
+            f"2️⃣ Enter your exchange credentials\n"
+            f"3️⃣ All dashboard features will be unlocked\n\n"
+            f"**🔐 Supported Exchanges:**\n"
+            f"• Hyperliquid (Mainnet Only)\n\n"
+            f"**✅ Get Started:**\n"
+            f"`/add_api_key exchange:hyperliquid api_key:YOUR_WALLET api_secret:YOUR_KEY`\n\n"
+            f"💡 Your credentials are encrypted and stored securely"
+        )
+        
+        # Create a back button to return to main dashboard
+        back_view = BackToDashboardView(bot)
+        await interaction.response.edit_message(content=setup_message, embed=None, view=back_view)
+        return False
+    
+    return True
+
+# Navigation Views (Back Buttons)
+class BackToDashboardView(discord.ui.View):
+    """View with a back button to return to main dashboard"""
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="← Back to Dashboard", style=discord.ButtonStyle.secondary, emoji="🏠")
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Recreate main dashboard - simple message
+        message = (
+            f"🤖 **Auto Trade Bot**\n"
+            f"Welcome back, {interaction.user.mention}!\n\n"
+            f"Your intelligent trading companion for automated signal execution\n\n"
+            f"**🎯 Available Features:**\n"
+            f"⚙️  **Setup & Configuration** - Manage API keys and subscriptions\n"
+            f"💰 **Trading Dashboard** - Balance, positions & signal testing\n"
+            f"📊 **Analytics & Reports** - Performance tracking and insights\n"
+            f"🔍 **Real-time Monitoring** - Live price tracking and alerts\n\n"
+            f"**🏦 Supported Exchanges:**\n"
+            f"▸ **Hyperliquid** (Active & Tested - Mainnet Only)\n"
+            f"▸ More exchanges coming soon...\n\n"
+            f"**🚀 Quick Start Guide:**\n"
+            f"1️⃣ Click **Setup** to add your API key\n"
+            f"2️⃣ Subscribe to signal channels\n"
+            f"3️⃣ Automated trading begins!\n"
+            f"4️⃣ Monitor trades in real-time\n\n"
+            f"**� System Status:**\n"
+            f"🟢 Bot Online\n"
+            f"🟢 WebSocket Connected\n"
+            f"🟢 Database Active"
+        )
+        
+        view = DashboardView(self.bot)
+        # Explicitly clear embed and set new content
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+
+class BackToSetupView(discord.ui.View):
+    """View with a back button to return to setup menu"""
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="← Back to Setup", style=discord.ButtonStyle.secondary, emoji="⚙️")
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Simple message
+        message = (
+            f"⚙️ **Setup & Configuration**\n"
+            f"{interaction.user.mention}, customize your trading experience\n\n"
+            f"**📋 Available Options:**\n"
+            f"🔑 **API Key Management** - Add and manage exchange credentials\n"
+            f"📢 **Channel Subscriptions** - Subscribe to signal channels\n"
+            f"📋 **View Settings** - Review your current configuration\n\n"
+            f"**� Security Features:**\n"
+            f"▸ All credentials are encrypted\n"
+            f"▸ Secure database storage\n"
+            f"▸ Zero data sharing policy"
+        )
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+
+# UI Views and Modals
+class DashboardView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="Setup", style=discord.ButtonStyle.primary, emoji="⚙️", row=0)
+    async def setup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user is banned first
+        user_id = str(interaction.user.id)
+        self.bot.db.add_user(user_id, interaction.user.name)
+        
+        if self.bot.db.is_user_banned(user_id):
+            banned_message = (
+                f"🚫 **ACCESS DENIED**\n\n"
+                f"❌ **Your account has been banned**\n\n"
+                f"You cannot use this bot. If you believe this is a mistake, please contact the administrator.\n\n"
+                f"📧 **For appeals, contact server staff.**"
+            )
+            await interaction.response.edit_message(content=banned_message, embed=None, view=None)
+            return
+        
+        message = f"""⚙️ **SETUP & CONFIGURATION**
+
+{interaction.user.mention}, customize your trading experience
+
+**📋 Available Options:**
+
+🔑 **API Key Management**
+   Add and manage exchange credentials
+
+📢 **Channel Subscriptions**
+   Subscribe to signal channels
+
+📋 **View Settings**
+   Review your current configuration
+
+**🔒 Security Features:**
+▸ All credentials are encrypted
+▸ Secure database storage
+▸ Zero data sharing policy
+
+───────────────────────────
+Auto Trade Bot • Secure Configuration Panel"""
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+    
+    @discord.ui.button(label="Trading", style=discord.ButtonStyle.success, emoji="💰", row=0)
+    async def trading_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await check_api_key_required(interaction, self.bot):
+            return
+        
+        embed = discord.Embed(
+            title="",
+            description="",
+            color=0x57F287  # Discord Green
+        )
+        
+        # Add header
+        embed.add_field(
+            name="",
+            value=f"💰 **Trading Dashboard**\n{interaction.user.mention}, manage your trades",
+            inline=False
+        )
+        
+        # Trading options with modern styling
+        trading_options = (
+            "```\n"
+            "💵 Balance Overview\n"
+            "   View exchange account balance\n\n"
+            "📊 Open Positions\n"
+            "   Monitor active trades\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="� Trading Tools",
+            value=trading_options,
+            inline=False
+        )
+        
+        # Quick stats
+        quick_info = (
+            "▸ Real-time balance updates\n"
+            "▸ Position monitoring\n"
+            "▸ Signal validation"
+        )
+        
+        embed.add_field(
+            name="⚡ Features",
+            value=quick_info,
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto Trade Bot • Trading Control Center")
+        
+        view = TradingView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+    
+    @discord.ui.button(label="Analytics", style=discord.ButtonStyle.secondary, emoji="📊", row=1)
+    async def analytics_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await check_api_key_required(interaction, self.bot):
+            return
+        
+        message = f"""📊 **ANALYTICS & PERFORMANCE**
+
+{interaction.user.mention}, track your success
+
+**📊 Analysis Tools:**
+
+📈 **Trade History**
+   Complete execution logs
+
+📊 **Performance Metrics**
+   Win rate and statistics
+
+💹 **Profit/Loss Analysis**
+   Detailed P&L reports
+
+**📈 Insights:**
+▸ Historical trade data
+▸ Performance insights
+▸ Risk metrics
+
+───────────────────────────
+Auto Trade Bot • Performance Analytics"""
+        
+        view = AnalyticsView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+    
+    @discord.ui.button(label="Monitor", style=discord.ButtonStyle.secondary, emoji="🔍", row=1)
+    async def monitor_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await check_api_key_required(interaction, self.bot):
+            return
+        # Get user-specific monitoring status as text
+        user_monitoring_text = await self.bot.trade_monitor.create_user_monitoring_text(str(interaction.user.id))
+        
+        view = MonitoringView(self.bot)
+        await interaction.response.edit_message(content=user_monitoring_text, embed=None, view=view, attachments=[])
+    
+    @discord.ui.button(label="Help", style=discord.ButtonStyle.secondary, emoji="❓", row=1)
+    async def help_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="",
+            description="",
+            color=0x5865F2  # Discord Blurple
+        )
+        
+        # Add header
+        embed.add_field(
+            name="",
+            value="❓ **Help & Documentation**\nYour complete guide to automated trading",
+            inline=False
+        )
+        
+        # Quick start guide
+        quick_start = (
+            "```\n"
+            "1️⃣ Add API Keys\n"
+            "   Use Setup → Add API Key\n\n"
+            "2️⃣ Subscribe to Channels\n"
+            "   Enable auto-trading for channels\n\n"
+            "3️⃣ Post Signals\n"
+            "   Bot automatically executes trades\n\n"
+            "4️⃣ Monitor Positions\n"
+            "   Track progress in real-time\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="� Quick Start Guide",
+            value=quick_start,
+            inline=False
+        )
+        
+        # Signal format
+        signal_format = (
+            "```\n"
+            "LONG BTC/USDC\n"
+            "ENTRY: 45000-46000\n"
+            "SL: 44000\n"
+            "TP: 48000, 50000, 52000\n"
+            "LEVERAGE: 10x\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="📋 Signal Format",
+            value=signal_format,
+            inline=False
+        )
+        
+        # Commands
+        commands = (
+            "▸ `/dashboard` - Open main control panel\n"
+            "▸ `/subscribe` - Quick subscribe to current channel\n"
+            "▸ `/balance` - Check account balance\n"
+            "▸ `/positions` - View open positions\n"
+            "▸ `/history` - Trade execution history"
+        )
+        
+        embed.add_field(
+            name="⌨️ Available Commands",
+            value=commands,
+            inline=False
+        )
+        
+        # Exchanges
+        exchanges = (
+            "```\n"
+            "🟢 Hyperliquid (Active)\n"
+            "   • Spot & Perpetuals\n"
+            "   • Mainnet Only\n"
+            "   • Low fees\n\n"
+            "🔜 Coming Soon\n"
+            "   • More exchanges\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="🏦 Supported Exchanges",
+            value=exchanges,
+            inline=False
+        )
+        
+        # Features
+        features = (
+            "▸ Real-time signal parsing\n"
+            "▸ Automatic trade execution\n"
+            "▸ TP/SL monitoring with alerts\n"
+            "▸ Multi-channel subscriptions\n"
+            "▸ Encrypted credential storage\n"
+            "▸ Performance analytics"
+        )
+        
+        embed.add_field(
+            name="✨ Key Features",
+            value=features,
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto Trade Bot • Need more help? Contact support")
+        
+        view = BackButton(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+# Exchange Selection View for API Key
+class ExchangeSelectionView(discord.ui.View):
+    def __init__(self, bot, parent_view):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.parent_view = parent_view
+        self.add_item(ExchangeDropdown(bot, parent_view))
+    
+    @discord.ui.button(label="← Back to Setup", style=discord.ButtonStyle.secondary, emoji="⚙️", row=1)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Return to setup menu
+        message = (
+            f"⚙️ **Setup & Configuration**\n"
+            f"{interaction.user.mention}, customize your trading experience\n\n"
+            f"**📋 Available Options:**\n"
+            f"🔑 **API Key Management** - Add and manage exchange credentials\n"
+            f"📢 **Channel Subscriptions** - Subscribe to signal channels\n"
+            f"📋 **View Settings** - Review your current configuration\n\n"
+            f"**🔐 Security Features:**\n"
+            f"▸ All credentials are encrypted\n"
+            f"▸ Secure database storage\n"
+            f"▸ Zero data sharing policy"
+        )
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view)
+
+class ExchangeDropdown(discord.ui.Select):
+    def __init__(self, bot, parent_view):
+        self.bot = bot
+        self.parent_view = parent_view
+        
+        # Define available exchanges
+        options = [
+            discord.SelectOption(
+                label="Hyperliquid",
+                description="Decentralized perpetual futures exchange",
+                emoji="🏦",
+                value="hyperliquid"
+            ),
+            # More exchanges coming soon
+        ]
+        
+        super().__init__(
+            placeholder="🔍 Select an exchange...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_exchange = self.values[0]
+        
+        # Show modal with the selected exchange
+        modal = APIKeyModal(self.bot, self.parent_view, selected_exchange)
+        await interaction.response.send_modal(modal)
+
+class RiskManagementView(discord.ui.View):
+    """View for managing risk settings across all subscriptions"""
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="Update Risk Settings", style=discord.ButtonStyle.primary, emoji="⚙️", row=0)
+    async def update_risk(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = RiskManagementModal(self.bot)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="← Back to Setup", style=discord.ButtonStyle.secondary, emoji="⚙️", row=1)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message = (
+            f"⚙️ **Setup & Configuration**\n"
+            f"{interaction.user.mention}, customize your trading experience\n\n"
+            f"**📋 Available Options:**\n"
+            f"🔑 **API Key Management** - Add and manage exchange credentials\n"
+            f"📢 **Channel Subscriptions** - Subscribe to signal channels\n"
+            f"📋 **View Settings** - Review your current configuration\n"
+            f"🛡️ **Risk Management** - Update position sizing & risk\n\n"
+            f"**🔐 Security Features:**\n"
+            f"▸ All credentials are encrypted\n"
+            f"▸ Secure database storage\n"
+            f"▸ Zero data sharing policy"
+        )
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view)
+
+class RiskManagementModal(discord.ui.Modal):
+    """Modal for updating risk management settings"""
+    def __init__(self, bot):
+        super().__init__(title="🛡️ Update Risk Settings")
+        self.bot = bot
+    
+    position_mode = discord.ui.TextInput(
+        label="Position Mode (fixed/percentage)",
+        placeholder="percentage",
+        default="percentage",
+        max_length=20,
+        required=True
+    )
+    
+    amount = discord.ui.TextInput(
+        label="Fixed Amount ($) OR Percentage (%)",
+        placeholder="100 (if fixed) or 10 (if percentage)",
+        default="10",
+        max_length=10,
+        required=True
+    )
+    
+    max_risk = discord.ui.TextInput(
+        label="Max Risk Percentage (Safety Cap)",
+        placeholder="2.0",
+        default="2.0",
+        max_length=10,
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user_id = str(interaction.user.id)
+            
+            # Validate inputs
+            mode = self.position_mode.value.strip().lower()
+            if mode not in ['fixed', 'percentage']:
+                await interaction.response.send_message(
+                    "❌ Position mode must be 'fixed' or 'percentage'",
+                    ephemeral=True
+                )
+                return
+            
+            try:
+                amount = float(self.amount.value.strip())
+                max_risk_val = float(self.max_risk.value.strip())
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ Amount and Max Risk must be valid numbers",
+                    ephemeral=True
+                )
+                return
+            
+            if amount <= 0:
+                await interaction.response.send_message(
+                    "❌ Amount must be greater than 0",
+                    ephemeral=True
+                )
+                return
+            
+            if max_risk_val <= 0 or max_risk_val > 100:
+                await interaction.response.send_message(
+                    "❌ Max Risk must be between 0 and 100%",
+                    ephemeral=True
+                )
+                return
+            
+            # Get all user subscriptions
+            subscriptions = self.bot.db.get_user_subscriptions(user_id)
+            
+            if not subscriptions:
+                await interaction.response.send_message(
+                    "❌ No subscriptions found to update",
+                    ephemeral=True
+                )
+                return
+            
+            # Update all subscriptions using DatabaseManager
+            updated_count = 0
+            for sub in subscriptions:
+                try:
+                    success = self.bot.db.update_subscription(
+                        subscription_id=sub['id'],
+                        position_mode=mode,
+                        position_size=amount,
+                        max_risk=max_risk_val
+                    )
+                    if success:
+                        updated_count += 1
+                except Exception as update_err:
+                    logger.error(f"Error updating subscription {sub['channel_id']}: {update_err}")
+            
+            # Success message
+            if mode == 'fixed':
+                size_text = f"${amount:.2f} per trade"
+            else:
+                size_text = f"{amount}% of balance"
+            
+            success_message = (
+                f"✅ **Risk Settings Updated Successfully!**\n\n"
+                f"**Updated:** {updated_count} subscription(s)\n\n"
+                f"**New Settings:**\n"
+                f"💵 Position Size: {size_text}\n"
+                f"🛡️ Max Risk: {max_risk_val}%\n"
+                f"📊 Mode: {mode.capitalize()}\n\n"
+                f"**📝 Effect:**\n"
+                f"▸ All future signals will use these settings\n"
+                f"▸ Existing trades remain unchanged\n"
+                f"▸ Applied to all {updated_count} subscribed channels"
+            )
+            
+            view = BackToSetupView(self.bot)
+            await interaction.response.send_message(success_message, view=view, ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Risk management update error: {e}")
+            await interaction.response.send_message(
+                f"❌ Error updating risk settings: {str(e)}",
+                ephemeral=True
+            )
+
+class ChangeAPIKeyView(discord.ui.View):
+    """View for changing/updating existing API keys"""
+    def __init__(self, bot, api_keys):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.api_keys = api_keys
+        self.add_item(ChangeAPIKeyDropdown(bot, api_keys))
+    
+    @discord.ui.button(label="← Back to Setup", style=discord.ButtonStyle.secondary, emoji="⚙️", row=1)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message = (
+            f"⚙️ **Setup & Configuration**\n"
+            f"{interaction.user.mention}, customize your trading experience\n\n"
+            f"**📋 Available Options:**\n"
+            f"🔑 **API Key Management** - Add and manage exchange credentials\n"
+            f"📢 **Channel Subscriptions** - Subscribe to signal channels\n"
+            f"📋 **View Settings** - Review your current configuration\n\n"
+            f"**🔐 Security Features:**\n"
+            f"▸ All credentials are encrypted\n"
+            f"▸ Secure database storage\n"
+            f"▸ Zero data sharing policy"
+        )
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view)
+
+class ChangeAPIKeyDropdown(discord.ui.Select):
+    """Dropdown to select which exchange API key to update"""
+    def __init__(self, bot, api_keys):
+        self.bot = bot
+        self.api_keys = api_keys
+        
+        # Show ALL available exchanges (not just ones user has)
+        all_exchanges = ['hyperliquid']
+        
+        # Check which exchanges user currently has
+        user_exchanges = {exchange.lower(): testnet for exchange, testnet in api_keys}
+        
+        options = []
+        for exchange in all_exchanges:
+            # Check if user has this exchange configured
+            if exchange in user_exchanges:
+                testnet = user_exchanges[exchange]
+                env = "🧪 Testnet" if testnet else "🔴 Live"
+                description = f"Update {exchange} API key ({env}) ✅"
+                emoji = "✅"
+            else:
+                env = "🔴 Live"  # Default to mainnet
+                description = f"Add {exchange} API key (will replace current)"
+                emoji = "🆕"
+            
+            options.append(
+                discord.SelectOption(
+                    label=f"{exchange.capitalize()}",
+                    description=description,
+                    emoji=emoji,
+                    value=f"{exchange}|False"  # Always mainnet now
+                )
+            )
+        
+        super().__init__(
+            placeholder="🔍 Select exchange...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        # Parse selected value
+        exchange, testnet_str = self.values[0].split('|')
+        testnet = testnet_str == 'True'
+        
+        # Show update modal
+        modal = UpdateAPIKeyModal(self.bot, exchange, testnet)
+        await interaction.response.send_modal(modal)
+
+class UpdateAPIKeyModal(discord.ui.Modal):
+    """Modal for updating existing API keys"""
+    def __init__(self, bot, exchange: str, testnet: bool):
+        env = "Testnet" if testnet else "Live"
+        super().__init__(title=f"🔄 Update {exchange.capitalize()} ({env})")
+        self.bot = bot
+        self.exchange = exchange
+        self.testnet = testnet
+        
+        # Different fields based on exchange
+        if exchange.lower() == 'hyperliquid':
+            self.wallet_address = discord.ui.TextInput(
+                label="Wallet Address",
+                placeholder="0x1234567890abcdef...",
+                min_length=42,
+                max_length=42,
+                required=True
+            )
+            
+            self.private_key = discord.ui.TextInput(
+                label="Private Key",
+                placeholder="Your private key (kept secure)",
+                min_length=64,
+                max_length=66,
+                required=True,
+                style=discord.TextStyle.paragraph
+            )
+            
+            self.add_item(self.wallet_address)
+            self.add_item(self.private_key)
+        else:
+            # For other exchanges (future support)
+            self.api_key = discord.ui.TextInput(
+                label="API Key",
+                placeholder="Enter your API key",
+                required=True
+            )
+            
+            self.api_secret = discord.ui.TextInput(
+                label="API Secret",
+                placeholder="Enter your API secret",
+                required=True,
+                style=discord.TextStyle.paragraph
+            )
+            
+            self.add_item(self.api_key)
+            self.add_item(self.api_secret)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user_id = str(interaction.user.id)
+            
+            # Send initial "validating" message
+            await interaction.response.send_message(
+                "🔄 **Validating Credentials...**\n\n"
+                "⏳ Please wait while we verify your API key with the exchange...",
+                ephemeral=True
+            )
+            
+            # Process based on exchange
+            if self.exchange.lower() == 'hyperliquid':
+                wallet = self.wallet_address.value.strip()
+                private_key = self.private_key.value.strip()
+                
+                # Validate wallet address format
+                if not wallet.startswith('0x') or len(wallet) != 42:
+                    await interaction.edit_original_response(
+                        content="❌ Invalid wallet address format. Must start with 0x and be 42 characters."
+                    )
+                    return
+                
+                # Validate private key format
+                if private_key.startswith('0x'):
+                    private_key = private_key[2:]
+                if len(private_key) != 64:
+                    await interaction.edit_original_response(
+                        content="❌ Invalid private key format. Must be 64 hex characters."
+                    )
+                    return
+                
+                # ✅ VALIDATE CREDENTIALS WITH HYPERLIQUID
+                try:
+                    from connectors.hyperliquid_connector import HyperliquidConnector
+                    connector = HyperliquidConnector()
+                    
+                    validation_result = await connector.validate_credentials(
+                        wallet_address=wallet,
+                        private_key=private_key,
+                        testnet=self.testnet
+                    )
+                    
+                    if not validation_result['valid']:
+                        await interaction.edit_original_response(
+                            content=f"❌ **Credential Validation Failed**\n\n"
+                                    f"{validation_result['message']}\n\n"
+                                    f"**Please check:**\n"
+                                    f"▸ Wallet address is correct\n"
+                                    f"▸ Private key matches the wallet\n"
+                                    f"▸ You have network connectivity"
+                        )
+                        return
+                    
+                    # Credentials are valid! Show balance info
+                    balance = validation_result.get('balance', 0)
+                    logger.info(f"✅ Credentials validated for {wallet[:10]}... (Balance: ${balance:.2f})")
+                    
+                except Exception as val_err:
+                    logger.error(f"Validation error: {val_err}")
+                    await interaction.edit_original_response(
+                        content=f"❌ **Validation Error**\n\n"
+                                f"Unable to validate credentials: {str(val_err)}\n\n"
+                                f"The API key format appears correct, but we couldn't verify it with Hyperliquid."
+                    )
+                    return
+                
+                # Update API key (add_api_key method handles updating)
+                # Store wallet in both api_key and api_passphrase for consistency
+                success = self.bot.db.add_api_key(
+                    user_id=user_id,
+                    exchange=self.exchange,
+                    api_key=wallet,  # Wallet address stored here for display
+                    api_secret="",  # Not used for Hyperliquid
+                    api_passphrase=wallet,  # Also stored here for backward compatibility
+                    testnet=self.testnet,
+                    private_key=private_key
+                )
+                
+                if not success:
+                    await interaction.edit_original_response(
+                        content="❌ This wallet address is already in use by another user."
+                    )
+                    return
+                
+            else:
+                # Other exchanges (no validation yet)
+                api_key = self.api_key.value.strip()
+                api_secret = self.api_secret.value.strip()
+                
+                success = self.bot.db.add_api_key(
+                    user_id=user_id,
+                    exchange=self.exchange,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    testnet=self.testnet
+                )
+                
+                if not success:
+                    await interaction.edit_original_response(
+                        content="❌ This API key is already in use by another user."
+                    )
+                    return
+            
+            # Success message
+            env = "🧪 Testnet" if self.testnet else "🔴 Live"
+            success_message = (
+                f"✅ **API Key Updated Successfully!**\n\n"
+                f"🏦 **Exchange:** {self.exchange.capitalize()}\n"
+                f"**Environment:** {env}\n"
+            )
+            
+            if self.exchange.lower() == 'hyperliquid' and 'balance' in locals():
+                success_message += f"💰 **Balance:** ${balance:.2f}\n"
+            
+            success_message += (
+                f"\n**✅ Status:** Your API key has been validated and is now active.\n\n"
+                f"**🚀 Next Steps:**\n"
+                f"▸ Your existing subscriptions will use the new key\n"
+                f"▸ New trades will execute with updated credentials\n"
+                f"▸ Return to dashboard to continue"
+            )
+            
+            view = BackToSetupView(self.bot)
+            await interaction.edit_original_response(content=success_message, view=view)
+            
+        except Exception as e:
+            logger.error(f"Update API key error: {e}")
+            await interaction.response.send_message(
+                f"❌ Error updating API key: {str(e)}\nPlease try again.",
+                ephemeral=True
+            )
+
+class SetupView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    # Row 0: Primary Actions - API Key Management
+    @discord.ui.button(label="Add API Key", style=discord.ButtonStyle.success, emoji="🔑", row=0)
+    async def add_api_key(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user already has API keys
+        user_id = str(interaction.user.id)
+        
+        # Add user to database if not exists
+        self.bot.db.add_user(user_id, interaction.user.name)
+        
+        # Check for existing API keys using DatabaseManager
+        existing_keys = self.bot.db.get_user_all_api_keys(user_id)
+        
+        if existing_keys:
+            # User already has API keys - show them
+            message = (
+                f"🔑 **API Keys Management**\n\n"
+                f"⚠️ You already have API keys configured:\n\n"
+            )
+            
+            for key_data in existing_keys:
+                exchange = key_data['exchange']
+                testnet = key_data['testnet']
+                env = "🧪 Testnet" if testnet else "🔴 Live Trading"
+                message += f"🏦 **{exchange.capitalize()}** - {env}\n"
+            
+            message += (
+                f"\n**⚠️ Note:**\n"
+                f"Currently, only one API key per exchange is supported.\n\n"
+                f"**Options:**\n"
+                f"▸ Use 'View Settings' to see your current configuration\n"
+                f"▸ Contact admin to update or remove existing keys\n"
+                f"▸ Return to setup menu"
+            )
+            
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=message, embed=None, view=view)
+        else:
+            # No API keys - show exchange selection
+            message = (
+                "🔑 **Add API Key**\n\n"
+                "Select the exchange you want to add credentials for:\n\n"
+                "**Available Exchanges:**\n"
+                "🏦 Hyperliquid - Decentralized perpetual futures\n\n"
+                "Choose an exchange from the dropdown below to continue."
+            )
+            
+            view = ExchangeSelectionView(self.bot, self)
+            await interaction.response.edit_message(content=message, embed=None, view=view)
+    
+    @discord.ui.button(label="Change API Key", style=discord.ButtonStyle.secondary, emoji="�", row=0)
+    async def change_api_key(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Show category selection view
+        embed = discord.Embed(
+            title="",
+            description="",
+            color=0x5865F2
+        )
+        
+        # Add header
+        embed.add_field(
+            name="",
+            value="📢 **Channel Subscription Manager**\nSelect a category to view channels",
+            inline=False
+        )
+        
+        # Get current guild and create category selection view
+        guild = interaction.guild
+        view = CategorySelectionView(self.bot, guild, interaction.user, interaction.message)
+        
+        # How it works
+        instructions = (
+            "```\n"
+            "1. Select a category from dropdown\n"
+            "2. Choose channels in that category\n"
+            "3. Configure trading settings\n"
+            "4. Signals auto-execute trades\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="🎯 How It Works",
+            value=instructions,
+            inline=False
+        )
+        
+        # Server info
+        categories_count = len(view.get_categories())
+        server_info = (
+            f"▸ Server: **{guild.name}**\n"
+            f"▸ Categories found: {categories_count}\n"
+            f"▸ Ready for selection"
+        )
+        
+        embed.add_field(
+            name="🔄 Server Data",
+            value=server_info,
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto Trade Bot • Category Selection")
+        
+        await interaction.response.edit_message(embed=embed, view=view)
+    
+    @discord.ui.button(label="📋 View Subscriptions", style=discord.ButtonStyle.secondary)
+    async def view_subscriptions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            subscriptions = self.bot.db.get_user_subscriptions(str(interaction.user.id))
+            
+            if not subscriptions:
+                message = (
+                    f"📋 **Your Subscriptions**\n"
+                    f"{interaction.user.mention}'s subscription list\n\n"
+                    f"❌ **No Active Subscriptions**\n"
+                    f"You're not subscribed to any channels yet.\n\n"
+                    f"**🚀 Get Started:**\n"
+                    f"▸ Click **Subscribe** button above\n"
+                    f"▸ Select channels to monitor\n"
+                    f"▸ Start automated trading"
+                )
+            else:
+                message = (
+                    f"📋 **Your Active Subscriptions**\n"
+                    f"{len(subscriptions)} channel(s) monitored\n\n"
+                    f"**📢 Subscribed Channels:**\n\n"
+                )
+                
+                # Show subscriptions (limit to prevent message being too long)
+                for i, sub in enumerate(subscriptions[:20], 1):  # Limit to 20
+                    try:
+                        channel_name = sub.get('channel_name', f"Channel-{sub.get('channel_id', 'Unknown')}")
+                        exchange = sub.get('exchange', 'unknown')
+                        position_size = sub.get('position_size', 1.0)
+                        max_risk = sub.get('max_risk', 2.0)
+                        
+                        message += f"{i}. **#{channel_name}**\n"
+                        message += f"   Exchange: {exchange.capitalize()} | Size: {position_size}x | Risk: {max_risk}%\n\n"
+                    except Exception as sub_error:
+                        logger.error(f"Error processing subscription {i}: {sub_error}")
+                        message += f"{i}. Error loading details\n\n"
+                
+                if len(subscriptions) > 20:
+                    message += f"... and {len(subscriptions) - 20} more\n\n"
+                
+                message += "✅ **Status:** All channels actively monitoring for trading signals"
+            
+            # Add back button
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+            
+        except Exception as e:
+            logger.error(f"View subscriptions error: {e}")
+            
+            error_message = (
+                "📋 **Subscription Status**\n\n"
+                "⚠️ **Error Loading**\n"
+                "Unable to load subscription details right now.\n\n"
+                "**🔄 What to Do:**\n"
+                "▸ Try again in a moment\n"
+                "▸ Check database connection\n"
+                "▸ Contact support if persists"
+            )
+            
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=error_message, embed=None, view=view, attachments=[])
+    
+    # Row 2: Configuration & Settings
+    @discord.ui.button(label="Change API Key", style=discord.ButtonStyle.secondary, emoji="�", row=2)
+    async def change_api_key(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Display user's complete configuration settings"""
+        try:
+            user_id = str(interaction.user.id)
+            
+            # Get API keys using DatabaseManager
+            api_keys_data = self.bot.db.get_user_all_api_keys(user_id)
+            
+            # Get subscriptions using DatabaseManager
+            subscriptions = self.bot.db.get_user_subscriptions(user_id)
+            
+            # Build settings message (keep under 2000 chars)
+            settings_message = f"📋 **Configuration Settings**\n{interaction.user.mention}\n\n"
+            
+            # API Keys Section
+            settings_message += "🔑 **API Keys**\n"
+            
+            if api_keys_data:
+                for key_data in api_keys_data:
+                    exchange = key_data['exchange']
+                    testnet = key_data['testnet']
+                    env = "🧪 Testnet" if testnet else "🔴 Live"
+                    settings_message += f"• {exchange.capitalize()} ({env}) - ✅ Active\n"
+            else:
+                settings_message += "❌ None configured\n"
+            
+            # Subscriptions Section (limit to 8 to avoid hitting 2000 char limit)
+            settings_message += f"\n📢 **Subscriptions** ({len(subscriptions)} total)\n"
+            
+            if subscriptions:
+                max_show = min(8, len(subscriptions))
+                for i, sub in enumerate(subscriptions[:max_show], 1):
+                    channel_id = sub['channel_id']
+                    exchange = sub['exchange']
+                    mode = sub['position_mode']
+                    fixed = sub['fixed_amount']
+                    percentage = sub['percentage_of_balance']
+                    max_risk = sub['max_risk']
+                    channel_name = sub.get('channel_name', f"Ch-{channel_id}")
+                    
+                    name = channel_name[:25]  # Limit name length
+                    
+                    if mode == 'fixed':
+                        size_text = f"${fixed:.0f}"
+                    else:
+                        size_text = f"{percentage}%"
+                    
+                    settings_message += f"{i}. #{name}\n"
+                    settings_message += f"   {exchange.capitalize()} | {size_text} | Risk: {max_risk}%\n"
+                
+                if len(subscriptions) > max_show:
+                    settings_message += f"... +{len(subscriptions) - max_show} more\n"
+            else:
+                settings_message += "❌ No active subscriptions\n"
+
+            # Trading Status
+            settings_message += "\n📊 **Status**\n"
+            
+            if api_keys_data and subscriptions:
+                settings_message += "✅ Fully configured & ready to trade\n"
+            elif api_keys_data:
+                settings_message += "⚠️ API keys added - subscribe to channels\n"
+            elif subscriptions:
+                settings_message += "⚠️ Channels subscribed - add API keys\n"
+            else:
+                settings_message += "❌ Setup required - add keys & subscribe\n"
+            
+            settings_message += "\n💡 Use buttons below to modify settings"
+            
+            # Ensure message is under 2000 chars
+            if len(settings_message) > 1950:
+                settings_message = settings_message[:1947] + "..."
+            
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=settings_message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"View settings error: {e}")
+            error_message = (
+                "📋 **Settings Overview**\n\n"
+                "⚠️ Error loading settings.\n"
+                "Please try again or contact support."
+            )
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=error_message, embed=None, view=view)
+    
+    @discord.ui.button(label="Change API Key", style=discord.ButtonStyle.secondary, emoji="🔄", row=2)
+    async def change_api_key(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Allow users to update their existing API keys"""
+        try:
+            user_id = str(interaction.user.id)
+            
+            # Get existing API keys using DatabaseManager
+            api_keys_data = self.bot.db.get_user_all_api_keys(user_id)
+            
+            if not api_keys_data:
+                message = (
+                    "🔄 **Change/Add API Key**\n\n"
+                    "You can add your first API key here:\n\n"
+                    "**🏦 Available Exchanges:**\n"
+                    "• Hyperliquid (Mainnet)\n\n"
+                    "**⚠️ Important:**\n"
+                    "• Only ONE exchange API key can be active at a time\n"
+                    "• Adding a new key will replace the current one\n"
+                    "• All subscriptions will use the latest key\n\n"
+                    "**📝 Select exchange below:**"
+                )
+                view = ChangeAPIKeyView(self.bot, [])
+                await interaction.response.edit_message(content=message, embed=None, view=view)
+                return
+            
+            # Show which exchanges have keys with public info
+            message = (
+                "🔄 **Change/Switch API Key**\n\n"
+                "**Your Current API Key:**\n\n"
+            )
+            
+            for key_data in api_keys_data:
+                exchange = key_data['exchange']
+                testnet = key_data['testnet']
+                api_key = key_data['api_key']
+                api_passphrase = key_data.get('api_passphrase')
+                env = "🧪 Testnet" if testnet else "🔴 Live"
+                message += f"✅ **{exchange.capitalize()} - {env}** (Active)\n"
+                
+                # Show public key based on exchange
+                if exchange.lower() == 'hyperliquid':
+                    # For Hyperliquid, wallet address can be in api_key or api_passphrase
+                    wallet = api_key if api_key else api_passphrase
+                    if wallet and len(wallet) == 42 and wallet.startswith('0x'):
+                        # Show shortened wallet address
+                        message += f"   📍 Wallet: `{wallet[:6]}...{wallet[-4:]}`\n"
+                    else:
+                        message += f"   📍 Wallet: `{wallet or 'Not available'}`\n"
+                    message += f"   🔐 Private Key: `Protected (not visible)`\n"
+                elif api_key:
+                    # For other exchanges, show partial API key
+                    if len(api_key) > 10:
+                        message += f"   🔑 API Key: `{api_key[:8]}...{api_key[-4:]}`\n"
+                    else:
+                        message += f"   🔑 API Key: `{api_key[:4]}...`\n"
+                    message += f"   🔐 Secret: `Protected (not visible)`\n"
+                
+                message += "\n"
+            
+            message += (
+                "**🏦 Available Exchanges:**\n"
+                "• Hyperliquid (Mainnet)\n\n"
+                "**⚠️ Important:**\n"
+                "• Only ONE exchange API key is kept active at a time\n"
+                "• Switching exchanges will replace the current key\n"
+                "• All subscriptions will use the new exchange\n"
+                "• Private keys are encrypted and never displayed\n\n"
+                "**📝 Select exchange (update current or switch to another):**"
+            )
+            
+            view = ChangeAPIKeyView(self.bot, [(key['exchange'], key['testnet']) for key in api_keys_data])
+            await interaction.response.edit_message(content=message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"Change API key error: {e}")
+            error_message = (
+                "🔄 **Change API Key**\n\n"
+                "⚠️ Error loading API keys.\n"
+                "Please try again or contact support."
+            )
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=error_message, embed=None, view=view)
+    
+    # Row 1: Channel Management
+    @discord.ui.button(label="Subscribe", style=discord.ButtonStyle.primary, emoji="📢", row=1)
+    async def subscribe(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Show category selection view
+        embed = discord.Embed(
+            title="",
+            description="",
+            color=0x5865F2
+        )
+        
+        # Add header
+        embed.add_field(
+            name="",
+            value="📢 **Channel Subscription Manager**\nSelect a category to view channels",
+            inline=False
+        )
+        
+        # Get current guild and create category selection view
+        guild = interaction.guild
+        view = CategorySelectionView(self.bot, guild, interaction.user, interaction.message)
+        
+        # How it works
+        instructions = (
+            "```\n"
+            "1. Select a category from dropdown\n"
+            "2. Choose channels in that category\n"
+            "3. Configure trading settings\n"
+            "4. Signals auto-execute trades\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="🎯 How It Works",
+            value=instructions,
+            inline=False
+        )
+        
+        # Server info
+        categories_count = len(view.get_categories())
+        server_info = (
+            f"▸ Server: **{guild.name}**\n"
+            f"▸ Categories found: {categories_count}\n"
+            f"▸ Ready for selection"
+        )
+        
+        embed.add_field(
+            name="🔄 Server Data",
+            value=server_info,
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto Trade Bot • Category Selection")
+        
+        await interaction.response.edit_message(embed=embed, view=view)
+    
+    @discord.ui.button(label="View Subscriptions", style=discord.ButtonStyle.secondary, emoji="📋", row=1)
+    async def view_subscriptions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            subscriptions = self.bot.db.get_user_subscriptions(str(interaction.user.id))
+            
+            if not subscriptions:
+                message = (
+                    f"📋 **Your Subscriptions**\n"
+                    f"{interaction.user.mention}'s subscription list\n\n"
+                    f"❌ **No Active Subscriptions**\n"
+                    f"You're not subscribed to any channels yet.\n\n"
+                    f"**🚀 Get Started:**\n"
+                    f"▸ Click **Subscribe** button above\n"
+                    f"▸ Select channels to monitor\n"
+                    f"▸ Start automated trading"
+                )
+            else:
+                message = (
+                    f"📋 **Your Active Subscriptions**\n"
+                    f"{len(subscriptions)} channel(s) monitored\n\n"
+                    f"**📢 Subscribed Channels:**\n\n"
+                )
+                
+                # Show subscriptions (limit to prevent message being too long)
+                for i, sub in enumerate(subscriptions[:20], 1):  # Limit to 20
+                    try:
+                        channel_name = sub.get('channel_name', f"Channel-{sub.get('channel_id', 'Unknown')}")
+                        exchange = sub.get('exchange', 'unknown')
+                        position_size = sub.get('position_size', 1.0)
+                        max_risk = sub.get('max_risk', 2.0)
+                        
+                        message += f"{i}. **#{channel_name}**\n"
+                        message += f"   Exchange: {exchange.capitalize()} | Size: {position_size}x | Risk: {max_risk}%\n\n"
+                    except Exception as sub_error:
+                        logger.error(f"Error processing subscription {i}: {sub_error}")
+                        message += f"{i}. Error loading details\n\n"
+                
+                if len(subscriptions) > 20:
+                    message += f"... and {len(subscriptions) - 20} more\n\n"
+                
+                message += "✅ **Status:** All channels actively monitoring for trading signals"
+            
+            # Add back button
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+            
+        except Exception as e:
+            logger.error(f"View subscriptions error: {e}")
+            
+            error_message = (
+                "📋 **Subscription Status**\n\n"
+                "⚠️ **Error Loading**\n"
+                "Unable to load subscription details right now.\n\n"
+                "**🔄 What to Do:**\n"
+                "▸ Try again in a moment\n"
+                "▸ Check database connection\n"
+                "▸ Contact support if persists"
+            )
+            
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=error_message, embed=None, view=view, attachments=[])
+    
+    # Row 2: Configuration & Settings
+    @discord.ui.button(label="Risk Management", style=discord.ButtonStyle.primary, emoji="🛡️", row=2)
+    async def risk_management(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Change risk management settings for all subscriptions"""
+        try:
+            user_id = str(interaction.user.id)
+            
+            # Get current subscriptions
+            subscriptions = self.bot.db.get_user_subscriptions(user_id)
+            
+            if not subscriptions:
+                message = (
+                    "🛡️ **Risk Management**\n\n"
+                    "❌ You don't have any active subscriptions.\n\n"
+                    "**📝 Next Steps:**\n"
+                    "▸ Click 'Subscribe' button to add channels\n"
+                    "▸ Then you can manage risk settings"
+                )
+                view = BackToSetupView(self.bot)
+                await interaction.response.edit_message(content=message, embed=None, view=view)
+                return
+            
+            # Show current risk settings summary
+            message = (
+                "🛡️ **Risk Management Settings**\n\n"
+                f"**Current Subscriptions:** {len(subscriptions)} channel(s)\n\n"
+                "**📊 Current Settings Overview:**\n"
+            )
+            
+            # Analyze current settings
+            fixed_count = sum(1 for s in subscriptions if s.get('position_mode') == 'fixed')
+            percentage_count = len(subscriptions) - fixed_count
+            
+            if fixed_count > 0:
+                message += f"• Fixed Amount: {fixed_count} channel(s)\n"
+            if percentage_count > 0:
+                message += f"• Percentage Mode: {percentage_count} channel(s)\n"
+            
+            # Show average max risk
+            avg_risk = sum(s.get('max_risk', 2.0) for s in subscriptions) / len(subscriptions)
+            message += f"• Average Max Risk: {avg_risk:.1f}%\n"
+            
+            message += (
+                "\n**⚙️ What You Can Change:**\n"
+                "• Position sizing mode (Fixed $ or % of balance)\n"
+                "• Position size amount\n"
+                "• Maximum risk percentage\n\n"
+                "**⚠️ Important:**\n"
+                "• Changes apply to ALL subscribed channels\n"
+                "• Existing trades are not affected\n"
+                "• New signals will use updated settings\n\n"
+                "**📝 Click below to update risk settings:**"
+            )
+            
+            view = RiskManagementView(self.bot)
+            await interaction.response.edit_message(content=message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"Risk management error: {e}")
+            error_message = (
+                "🛡️ **Risk Management**\n\n"
+                "⚠️ Error loading risk settings.\n"
+                "Please try again or contact support."
+            )
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=error_message, embed=None, view=view)
+    
+    # Row 3: Danger Zone
+    @discord.ui.button(label="Unsubscribe All", style=discord.ButtonStyle.danger, emoji="❌", row=3)
+    async def unsubscribe_all(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            subscriptions = self.bot.db.get_user_subscriptions(str(interaction.user.id))
+            
+            if not subscriptions:
+                message = (
+                    "❌ **No Active Subscriptions**\n\n"
+                    "You have no active subscriptions to remove.\n\n"
+                    "**🚀 Get Started:**\n"
+                    "▸ Click **Subscribe** button above\n"
+                    "▸ Select channels to monitor\n"
+                    "▸ Start automated trading"
+                )
+                view = BackToSetupView(self.bot)
+                await interaction.response.edit_message(content=message, embed=None, view=view)
+                return
+            
+            # Remove all subscriptions
+            removed_count = 0
+            for sub in subscriptions:
+                try:
+                    self.bot.db.remove_channel_subscription(
+                        str(interaction.user.id),
+                        sub['channel_id']
+                    )
+                    removed_count += 1
+                except Exception as e:
+                    logger.error(f"Error removing subscription for {sub['channel_id']}: {e}")
+            
+            success_text = (
+                f"✅ **Unsubscribed Successfully!**\n\n"
+                f"🗑️ **Removed**: {removed_count} subscriptions\n\n"
+                f"You will no longer receive automated trades from any channels.\n\n"
+                f"**🔄 What's Next?**\n"
+                f"▸ Use **Subscribe** button to add new channels\n"
+                f"▸ Configure risk settings\n"
+                f"▸ Return to dashboard"
+            )
+            
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=success_text, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"Unsubscribe all error: {e}")
+            error_message = (
+                "❌ **Error Unsubscribing**\n\n"
+                "Unable to remove subscriptions. Please try again.\n\n"
+                f"**Error Details:** {str(e)[:100]}"
+            )
+            view = BackToSetupView(self.bot)
+            await interaction.response.edit_message(content=error_message, embed=None, view=view)
+    
+    # Row 4: Navigation
+    @discord.ui.button(label="← Back to Dashboard", style=discord.ButtonStyle.secondary, emoji="🏠", row=4)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message = (
+            f"🤖 **Auto Trade Bot**\n"
+            f"Welcome back, {interaction.user.mention}!\n\n"
+            f"Your intelligent trading companion for automated signal execution\n\n"
+            f"**🎯 Available Features:**\n"
+            f"⚙️  **Setup & Configuration** - Manage API keys and subscriptions\n"
+            f"💰 **Trading Dashboard** - Balance, positions & signal testing\n"
+            f"📊 **Analytics & Reports** - Performance tracking and insights\n"
+            f"🔍 **Real-time Monitoring** - Live price tracking and alerts\n\n"
+            f"**🏦 Supported Exchanges:**\n"
+            f"▸ **Hyperliquid** (Active & Tested - Mainnet Only)\n"
+            f"▸ More exchanges coming soon...\n\n"
+            f"**🚀 Quick Start Guide:**\n"
+            f"1️⃣ Click **Setup** to add your API key\n"
+            f"2️⃣ Subscribe to signal channels\n"
+            f"3️⃣ Automated trading begins!\n"
+            f"4️⃣ Monitor trades in real-time\n\n"
+            f"**🔋 System Status:**\n"
+            f"🟢 Bot Online\n"
+            f"🟢 WebSocket Connected\n"
+            f"🟢 Database Active"
+        )
+        view = DashboardView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+
+class TradingView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="Check Balance", style=discord.ButtonStyle.success, emoji="💵", row=0)
+    async def check_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            user_id = str(interaction.user.id)
+            
+            # Get all API keys for the user
+            api_keys = self.bot.db.get_user_all_api_keys(user_id)
+            
+            if not api_keys:
+                # No API key - simple message
+                message = (
+                    "⚠️ **No API Key Found**\n\n"
+                    "📝 **Required:** Add your exchange API key first using the **Setup** menu.\n\n"
+                    "🔧 **Quick Fix:**\n"
+                    "▸ Return to dashboard\n"
+                    "▸ Click **Setup** button\n"
+                    "▸ Add your API credentials\n\n"
+                    "🔐 **Supported Exchange:**\n"
+                    "▸ Hyperliquid"
+                )
+                view = BackToDashboardView(self.bot)
+                await interaction.response.edit_message(content=message, embed=None, view=view)
+                return
+            
+            # Show loading state
+            loading_message = "💰 **Checking Balance...**\n⏳ Please wait..."
+            await interaction.response.edit_message(content=loading_message, embed=None, view=None)
+            
+            # Get balance from first available exchange
+            first_key = api_keys[0]
+            exchange = first_key['exchange']
+            
+            connector = self.bot.connectors.get(exchange)
+            if not connector:
+                raise Exception(f"Connector not found for {exchange}")
+            
+            balance = await connector.get_balance(first_key)
+            
+            # Success balance - simple message
+            account_type = '🧪 Testnet Mode' if first_key.get('testnet') else '🔴 Live Trading'
+            
+            message = (
+                f"💰 **Account Balance** - {exchange.capitalize()} Exchange\n\n"
+                f"╭─ **Total Balance**\n"
+                f"│  ${balance.get('total', 0):,.2f} USD\n"
+                f"│\n"
+                f"├─ **Available**\n"
+                f"│  ${balance.get('available', 0):,.2f} USD\n"
+                f"│\n"
+                f"╰─ **Account Type**\n"
+                f"   {account_type}\n\n"
+                f"✅ Balance updated\n"
+                f"🟢 API connection active\n"
+                f"📡 Real-time data"
+            )
+            
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"Balance check error: {e}")
+            
+            # Error - simple message
+            error_message = (
+                f"❌ **Balance Check Failed**\n\n"
+                f"⚠️ **Error:**\n```\n{str(e)[:100]}\n```\n\n"
+                f"🔧 **Troubleshooting:**\n"
+                f"▸ Verify API credentials\n"
+                f"▸ Check exchange status\n"
+                f"▸ Try again in a moment"
+            )
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=error_message, embed=None, view=view)
+    
+    @discord.ui.button(label="View Positions", style=discord.ButtonStyle.secondary, emoji="📊", row=0)
+    async def view_positions(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Show loading state
+            loading_message = "📊 **Loading Positions...**\n⏳ Please wait..."
+            await interaction.response.edit_message(content=loading_message, embed=None, view=None)
+            
+            # Get user's active trades
+            user_trades = await self.bot.trade_monitor.get_user_active_trades(interaction.user.id)
+            
+            if not user_trades:
+                message = (
+                    "📊 **Open Positions**\n"
+                    "❌ No active positions\n\n"
+                    "ℹ️ **Info:**\n"
+                    "You don't have any open trading positions currently.\n\n"
+                    "🚀 **Start Trading:**\n"
+                    "▸ Subscribe to channels\n"
+                    "▸ Wait for signals\n"
+                    "▸ Trades execute automatically"
+                )
+            else:
+                message = f"📊 **Your Open Positions**\n{len(user_trades)} active trade(s)\n\n"
+                
+                # Show positions
+                for i, trade in enumerate(user_trades[:5], 1):
+                    side_emoji = "🟢" if trade.get('side') == 'buy' else "🔴"
+                    symbol = trade.get('symbol', 'Unknown')
+                    entry = trade.get('entry_price', 0)
+                    current = trade.get('current_price')
+                    size = trade.get('size', 0)
+                    
+                    message += f"**Position {i}:**\n"
+                    message += f"{side_emoji} **{symbol}** {trade.get('side', '').upper()}\n"
+                    
+                    # Format entry price safely
+                    if entry and entry > 0:
+                        if entry < 10:
+                            message += f"Entry: `${entry:.4f}`"
+                        elif entry < 1000:
+                            message += f"Entry: `${entry:.2f}`"
+                        else:
+                            message += f"Entry: `${entry:,.0f}`"
+                    else:
+                        message += f"Entry: `N/A`"
+                    
+                    # Show size if available
+                    if size and size > 0:
+                        message += f" • Size: `{size:,.2f}`"
+                    
+                    # Show current price and P&L if available
+                    if current and current > 0 and entry and entry > 0:
+                        pnl_pct = ((current - entry) / entry * 100)
+                        if trade.get('side') == 'sell':
+                            pnl_pct = -pnl_pct
+                        pnl_emoji = "📈" if pnl_pct > 0 else "📉"
+                        
+                        # Format current price
+                        if current < 10:
+                            current_str = f"${current:.4f}"
+                        elif current < 1000:
+                            current_str = f"${current:.2f}"
+                        else:
+                            current_str = f"${current:,.0f}"
+                        
+                        message += f"\nCurrent: `{current_str}` {pnl_emoji} {pnl_pct:+.2f}%"
+                    else:
+                        message += f"\nCurrent: `Waiting for price update...`"
+                    
+                    message += "\n\n"
+                
+                # Status
+                message += (
+                    "✅ **Status:**\n"
+                    "🟢 Monitoring active\n"
+                    "🎯 TP/SL tracking enabled\n"
+                    "📡 Real-time updates"
+                )
+            
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"View positions error: {e}")
+            
+            error_message = (
+                "❌ **Unable to Load Positions**\n\n"
+                "🔄 **What to Do:**\n"
+                "▸ Try again\n"
+                "▸ Check connection\n"
+                "▸ Contact support if persists"
+            )
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=error_message, embed=None, view=view)
+    
+    @discord.ui.button(label="Back to Dashboard", style=discord.ButtonStyle.secondary, emoji="🔙", row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Return to main dashboard - simple message
+        message = (
+            f"🤖 **Auto Trade Bot**\n"
+            f"Welcome back, {interaction.user.mention}!\n\n"
+            f"Your intelligent trading companion for automated signal execution\n\n"
+            f"**🎯 Available Features:**\n"
+            f"⚙️  **Setup & Configuration** - Manage API keys and subscriptions\n"
+            f"💰 **Trading Dashboard** - Balance, positions & signal testing\n"
+            f"📊 **Analytics & Reports** - Performance tracking and insights\n"
+            f"🔍 **Real-time Monitoring** - Live price tracking and alerts\n\n"
+            f"**🏦 Supported Exchanges:**\n"
+            f"▸ **Hyperliquid** (Active & Tested)\n"
+            f"▸ More exchanges coming soon...\n\n"
+            f"**🚀 Quick Start Guide:**\n"
+            f"1️⃣ Click **Setup** to add your API key\n"
+            f"2️⃣ Subscribe to signal channels\n"
+            f"3️⃣ Automated trading begins!\n"
+            f"4️⃣ Monitor trades in real-time\n\n"
+            f"**📡 System Status:**\n"
+            f"🟢 Bot Online\n"
+            f"🟢 WebSocket Connected\n"
+            f"🟢 Database Active"
+        )
+        
+        view = DashboardView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+
+class AnalyticsDetailView(discord.ui.View):
+    """Detailed analytics view with timeframe selection"""
+    def __init__(self, bot, user_id):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.user_id = user_id
+    
+    @discord.ui.button(label="7 Days", style=discord.ButtonStyle.secondary, emoji="📅", row=0)
+    async def week_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_analytics(interaction, days=7)
+    
+    @discord.ui.button(label="30 Days", style=discord.ButtonStyle.primary, emoji="📅", row=0)
+    async def month_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_analytics(interaction, days=30)
+    
+    @discord.ui.button(label="90 Days", style=discord.ButtonStyle.secondary, emoji="📅", row=0)
+    async def quarter_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_analytics(interaction, days=90)
+    
+    @discord.ui.button(label="All Time", style=discord.ButtonStyle.secondary, emoji="♾️", row=0)
+    async def all_time_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._show_analytics(interaction, days=365)
+    
+    @discord.ui.button(label="← Back", style=discord.ButtonStyle.secondary, emoji="🔙", row=1)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        message = f"""📊 **ANALYTICS & PERFORMANCE**
+
+{interaction.user.mention}, track your success
+
+**📊 Analysis Tools:**
+
+📈 **Trade History**
+   Complete execution logs
+
+📊 **Performance Metrics**
+   Win rate and statistics
+
+💹 **Profit/Loss Analysis**
+   Detailed P&L reports
+
+**📈 Insights:**
+▸ Historical trade data
+▸ Performance insights
+▸ Risk metrics
+
+───────────────────────────
+Auto Trade Bot • Performance Analytics"""
+        
+        view = AnalyticsView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view)
+    
+    async def _show_analytics(self, interaction: discord.Interaction, days: int):
+        """Helper method to show analytics for different timeframes"""
+        await interaction.response.defer()
+        
+        try:
+            from utils import TradeAnalytics
+            
+            analytics = TradeAnalytics(self.bot.db)
+            metrics = analytics.calculate_metrics(user_id=int(self.user_id), days=days)
+            
+            if metrics.get('total_trades', 0) == 0:
+                message = (
+                    f"📊 **Performance Analytics** ({days} Days)\n"
+                    f"❌ No completed trades in this period"
+                )
+            else:
+                # Generate report
+                report = analytics.create_performance_report(user_id=int(self.user_id), days=days)
+                message = report
+            
+            await interaction.followup.edit_message(
+                message_id=interaction.message.id,
+                content=message,
+                view=self
+            )
+            
+        except Exception as e:
+            logger.error(f"Error loading {days}-day analytics: {e}")
+            await interaction.followup.send(
+                f"❌ Error loading {days}-day analytics",
+                ephemeral=True
+            )
+
+class AnalyticsView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="Trade History", style=discord.ButtonStyle.primary, emoji="📈", row=0)
+    async def trade_history(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Show loading state
+        loading_message = "📈 **Loading Trade History...**\n⏳ Please wait..."
+        await interaction.response.edit_message(content=loading_message, embed=None, view=None)
+        
+        try:
+            trades = self.bot.db.get_user_trades(str(interaction.user.id), limit=10)
+            
+            if not trades:
+                message = (
+                    "📈 **Trade History**\n"
+                    "❌ No trades yet\n\n"
+                    "**ℹ️ Info:**\n"
+                    "No trading history found\n"
+                    "Start trading to see logs here\n\n"
+                    "**🚀 How to Trade:**\n"
+                    "1️⃣ Add API keys in Setup\n"
+                    "2️⃣ Subscribe to signal channels\n"
+                    "3️⃣ Post or wait for signals\n"
+                    "4️⃣ Trades execute automatically"
+                )
+            else:
+                message = f"📈 **Recent Trade History**\n{len(trades)} execution(s) found\n\n"
+                
+                # Show trade details
+                for i, trade in enumerate(trades[:5], 1):
+                    side_emoji = "🟢" if trade['side'] == 'buy' else "🔴"
+                    symbol = trade.get('symbol', 'Unknown')
+                    side = trade.get('side', '').upper()
+                    size = trade.get('size', 0)
+                    exchange = trade.get('exchange', 'unknown').title()
+                    status = trade.get('status', 'unknown')
+                    price = trade.get('price', 0)
+                    date = trade.get('created_at', 'Unknown')
+                    
+                    # Status emoji
+                    status_emoji = "✅" if status == 'completed' else ("⏳" if status == 'active' else "❌")
+                    
+                    message += (
+                        f"**Trade {i}:**\n"
+                        f"{side_emoji} **{symbol}** {side}\n"
+                        f"Size: `{size}` | Price: `${price:,.4f}`\n"
+                        f"{status_emoji} {status.title()} | {exchange}\n"
+                        f"📅 {date[:10] if len(date) > 10 else date}\n\n"
+                    )
+                
+                # Stats
+                completed = sum(1 for t in trades if t.get('status') == 'completed')
+                active = sum(1 for t in trades if t.get('status') == 'active')
+                
+                message += (
+                    f"**📊 Statistics:**\n"
+                    f"Total Trades: {len(trades)}\n"
+                    f"✅ Completed: {completed}\n"
+                    f"⏳ Active: {active}"
+                )
+            
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"Trade history error: {e}")
+            
+            error_message = (
+                "❌ **Unable to Load History**\n\n"
+                "**🔄 What to Do:**\n"
+                "▸ Try again\n"
+                "▸ Check database connection\n"
+                "▸ Contact support if persists"
+            )
+            
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=error_message, embed=None, view=view)
+    
+    @discord.ui.button(label="Performance", style=discord.ButtonStyle.secondary, emoji="📊", row=0)
+    async def performance_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Show loading state
+        loading_message = "📊 **Loading Performance Analytics...**\n⏳ Analyzing your trading data..."
+        await interaction.response.edit_message(content=loading_message, embed=None, view=None)
+        
+        try:
+            from utils import TradeAnalytics
+            
+            user_id = str(interaction.user.id)
+            analytics = TradeAnalytics(self.bot.db)
+            
+            # Get 30-day metrics
+            metrics = analytics.calculate_metrics(user_id=int(user_id), days=30)
+            
+            if metrics.get('total_trades', 0) == 0:
+                message = (
+                    "📊 **Performance Analytics**\n"
+                    "❌ No completed trades in last 30 days\n\n"
+                    "**ℹ️ Info:**\n"
+                    "Complete at least 5 trades to see comprehensive analytics.\n\n"
+                    "**📈 What you'll see:**\n"
+                    "▸ Win Rate & Profit Factor\n"
+                    "▸ Average Win/Loss\n"
+                    "▸ Total P&L\n"
+                    "▸ Max Drawdown\n"
+                    "▸ Performance by Symbol"
+                )
+            else:
+                # Build comprehensive analytics message
+                win_rate = metrics.get('win_rate', 0)
+                profit_factor = metrics.get('profit_factor', 0)
+                net_pnl = metrics.get('net_pnl', 0)
+                expectancy = metrics.get('expectancy', 0)
+                
+                # Determine performance rating
+                if profit_factor >= 2.0 and win_rate >= 60:
+                    rating = "⭐⭐⭐⭐⭐ EXCELLENT"
+                    rating_color = "🟢"
+                elif profit_factor >= 1.5 and win_rate >= 50:
+                    rating = "⭐⭐⭐⭐ VERY GOOD"
+                    rating_color = "🟢"
+                elif profit_factor >= 1.0 and win_rate >= 45:
+                    rating = "⭐⭐⭐ GOOD"
+                    rating_color = "🟡"
+                elif net_pnl > 0:
+                    rating = "⭐⭐ PROFITABLE"
+                    rating_color = "🟡"
+                else:
+                    rating = "⭐ NEEDS IMPROVEMENT"
+                    rating_color = "🔴"
+                
+                pnl_emoji = "🟢" if net_pnl > 0 else "🔴"
+                
+                message = f"""📊 **PERFORMANCE ANALYTICS** (30 Days)
+{rating_color} **{rating}**
+
+**📈 Overview:**
+╭─ Total Trades: **{metrics['total_trades']}**
+├─ Wins: {metrics['winning_trades']} | Losses: {metrics['losing_trades']}
+├─ Win Rate: **{win_rate:.1f}%**
+╰─ Profit Factor: **{profit_factor:.2f}**
+
+**💰 Profit & Loss:**
+╭─ Total Profit: **${metrics['total_profit']:.2f}**
+├─ Total Loss: **-${metrics['total_loss']:.2f}**
+├─ {pnl_emoji} Net P&L: **${net_pnl:+.2f}**
+╰─ Expectancy: **${expectancy:.2f}** per trade
+
+**📊 Averages:**
+╭─ Avg Win: ${metrics['avg_win']:.2f}
+├─ Avg Loss: -${metrics['avg_loss']:.2f}
+╰─ Avg Trade: ${metrics['avg_pnl']:.2f}
+
+**🎯 Best & Worst:**
+╭─ Largest Win: ${metrics['largest_win']:.2f}
+╰─ Largest Loss: ${metrics['largest_loss']:.2f}
+
+**📉 Risk Metrics:**
+╭─ Max Drawdown: -${metrics['max_drawdown']['max_drawdown']:.2f}
+│  ({metrics['max_drawdown']['max_drawdown_percent']:.1f}%)
+├─ Max Consecutive Wins: {metrics['consecutive_stats']['max_consecutive_wins']}
+├─ Max Consecutive Losses: {metrics['consecutive_stats']['max_consecutive_losses']}
+╰─ Current Streak: {metrics['consecutive_stats']['current_streak']}"""
+                
+                # Add symbol performance if available
+                symbol_perf = analytics.get_performance_by_symbol(int(user_id), days=30)
+                if symbol_perf:
+                    message += "\n\n**📈 Top Symbols:**"
+                    for i, (symbol, data) in enumerate(list(symbol_perf.items())[:3], 1):
+                        pnl_sym = data['total_pnl']
+                        emoji_sym = "🟢" if pnl_sym > 0 else "🔴"
+                        message += (
+                            f"\n{i}. **{symbol}**: {data['total_trades']} trades | "
+                            f"{data['win_rate']:.0f}% WR | {emoji_sym}${pnl_sym:+.2f}"
+                        )
+                
+                message += "\n\n**� Analysis powered by TradeAnalytics**"
+            
+            # Create view with more analytics options
+            view = AnalyticsDetailView(self.bot, user_id)
+            await interaction.edit_original_response(content=message, embed=None, view=view)
+            
+        except Exception as e:
+            logger.error(f"Performance analytics error: {e}", exc_info=True)
+            
+            error_message = (
+                "❌ **Unable to Load Analytics**\n\n"
+                f"Error: {str(e)}\n\n"
+                "**🔄 What to Do:**\n"
+                "▸ Try again\n"
+                "▸ Check database connection\n"
+                "▸ Contact support if persists"
+            )
+            
+            view = BackToDashboardView(self.bot)
+            await interaction.edit_original_response(content=error_message, embed=None, view=view)
+    
+    @discord.ui.button(label="Back to Dashboard", style=discord.ButtonStyle.secondary, emoji="🔙", row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Return to main dashboard - simple message
+        message = (
+            f"🤖 **Auto Trade Bot**\n"
+            f"Welcome back, {interaction.user.mention}!\n\n"
+            f"Your intelligent trading companion for automated signal execution\n\n"
+            f"**🎯 Available Features:**\n"
+            f"⚙️  **Setup & Configuration** - Manage API keys and subscriptions\n"
+            f"💰 **Trading Dashboard** - Balance, positions & signal testing\n"
+            f"📊 **Analytics & Reports** - Performance tracking and insights\n"
+            f"🔍 **Real-time Monitoring** - Live price tracking and alerts\n\n"
+            f"**🏦 Supported Exchanges:**\n"
+            f"▸ **Hyperliquid** (Active & Tested)\n"
+            f"▸ More exchanges coming soon...\n\n"
+            f"**🚀 Quick Start Guide:**\n"
+            f"1️⃣ Click **Setup** to add your API key\n"
+            f"2️⃣ Subscribe to signal channels\n"
+            f"3️⃣ Automated trading begins!\n"
+            f"4️⃣ Monitor trades in real-time\n\n"
+            f"**📡 System Status:**\n"
+            f"🟢 Bot Online\n"
+            f"🟢 WebSocket Connected\n"
+            f"🟢 Database Active"
+        )
+        
+        view = DashboardView(self.bot)
+        await interaction.response.edit_message(content=message, embed=None, view=view, attachments=[])
+
+# Category Selection View
+class CategorySelectionView(discord.ui.View):
+    """Select a category first, then see channels in that category"""
+    def __init__(self, bot, guild, user, dashboard_message=None):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild = guild
+        self.user = user
+        self.dashboard_message_id = dashboard_message.id if dashboard_message else None
+        self.dashboard_channel_id = dashboard_message.channel.id if dashboard_message else None
+        
+        # Get categories first
+        categories = self.get_categories()
+        
+        # Add the category dropdown with pre-fetched categories
+        self.add_item(CategoryDropdown(bot, guild, user, categories, self))
+        
+        # Add back button
+        back_btn = discord.ui.Button(label="← Back to Setup", style=discord.ButtonStyle.secondary, emoji="⚙️")
+        back_btn.callback = self.back_to_setup
+        self.add_item(back_btn)
+    
+    def get_categories(self):
+        """Get only the 'Auto Trade Bot' category with accessible channels"""
+        categories = {}
+        
+        try:
+            bot_member = self.guild.get_member(self.bot.user.id)
+            user_member = self.guild.get_member(self.user.id) if self.user else None
+            
+            # Get all text channels the bot and user can access
+            for channel in self.guild.channels:
+                if not isinstance(channel, discord.TextChannel):
+                    continue
+                
+                # Check bot permissions
+                if not bot_member or not channel.permissions_for(bot_member).read_messages:
+                    continue
+                
+                # Check user permissions
+                if user_member:
+                    user_perms = channel.permissions_for(user_member)
+                    if not (user_perms.read_messages and user_perms.view_channel):
+                        continue
+                
+                # Only include channels in "Auto Trade Bot" category
+                if not channel.category:
+                    continue
+                
+                category_name = channel.category.name
+                
+                # Filter: Only show "Auto Trade Bot" category
+                if category_name != "Auto Trade Bot":
+                    continue
+                
+                category_id = str(channel.category.id)
+                
+                if category_id not in categories:
+                    categories[category_id] = {
+                        'name': category_name,
+                        'channels': []
+                    }
+                
+                categories[category_id]['channels'].append(channel)
+        
+        except Exception as e:
+            logger.error(f"Error getting categories: {e}")
+        
+        return categories
+    
+    async def back_to_setup(self, interaction: discord.Interaction):
+        """Navigate back to setup menu"""
+        embed = discord.Embed(title="", description="", color=0x5865F2)
+        
+        embed.add_field(
+            name="",
+            value=f"⚙️ **Setup & Configuration**\n{interaction.user.mention}, customize your trading experience",
+            inline=False
+        )
+        
+        setup_options = (
+            "```\n"
+            "🔑 API Key Management\n"
+            "   Add and manage exchange credentials\n\n"
+            "📢 Channel Subscriptions\n"
+            "   Subscribe to signal channels\n\n"
+            "📋 View Settings\n"
+            "   Review your current configuration\n"
+            "```"
+        )
+        
+        embed.add_field(name="📋 Available Options", value=setup_options, inline=False)
+        
+        security = (
+            "▸ All credentials are encrypted\n"
+            "▸ Secure database storage\n"
+            "▸ Zero data sharing policy"
+        )
+        
+        embed.add_field(name="🔐 Security Features", value=security, inline=False)
+        embed.set_footer(text="Auto Trade Bot • Secure Configuration Panel")
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class CategoryDropdown(discord.ui.Select):
+    """Dropdown to select a category"""
+    def __init__(self, bot, guild, user, categories, parent_view=None):
+        self.bot = bot
+        self.guild = guild
+        self.user = user
+        self.categories = categories
+        self.parent_view = parent_view  # Store parent view reference
+        
+        # Create options from categories
+        options = []
+        for cat_id, cat_data in list(categories.items())[:25]:  # Discord limit
+            channel_count = len(cat_data['channels'])
+            options.append(discord.SelectOption(
+                label=f"📁 {cat_data['name']}",
+                description=f"{channel_count} channel{'s' if channel_count != 1 else ''} available",
+                value=cat_id,
+                emoji="📁"
+            ))
+        
+        # Fallback if no categories
+        if not options:
+            options.append(discord.SelectOption(
+                label="No categories found",
+                description="No accessible channels",
+                value="none"
+            ))
+        
+        super().__init__(
+            placeholder="📁 Select a category to view channels...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        """When user selects a category"""
+        if self.values[0] == "none":
+            await interaction.response.send_message("❌ No categories available.", ephemeral=True)
+            return
+        
+        selected_category_id = self.values[0]
+        
+        # Get channels in this category from stored categories
+        if selected_category_id not in self.categories:
+            await interaction.response.send_message("❌ Category not found!", ephemeral=True)
+            return
+        
+        category_data = self.categories[selected_category_id]
+        channels = category_data['channels']
+        
+        # Show channels in this category
+        embed = discord.Embed(
+            title="",
+            description="",
+            color=0x5865F2
+        )
+        
+        embed.add_field(
+            name="",
+            value=f"📁 **{category_data['name']}**\nSelect channels individually or use **Select All** for bulk subscription",
+            inline=False
+        )
+        
+        # Channel info with multi-select hint
+        channel_info = (
+            f"```\n"
+            f"Channels: {len(channels)}\n"
+            f"Category: {category_data['name']}\n"
+            f"Multi-select: Up to 10 channels at once\n"
+            f"Bulk Action: Select All available\n"
+            f"```"
+        )
+        
+        embed.add_field(
+            name="📊 Selection Options",
+            value=channel_info,
+            inline=False
+        )
+        
+        # Quick tips
+        tips = (
+            "💡 **How to Select**:\n"
+            "▸ **Select All**: Subscribe to all channels at once\n"
+            "▸ **Dropdown**: Choose specific channels (up to 10)\n"
+            "▸ **Clear All**: Reset your selection\n"
+            "▸ Same settings apply to all selected channels"
+        )
+        
+        embed.add_field(
+            name="💡 Tips",
+            value=tips,
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto Trade Bot • Multi-Channel Selection")
+        
+        # Create channel selection view for this category
+        # Pass parent view reference to preserve dashboard message info
+        channel_view = ChannelsInCategoryView(
+            self.bot, channels, category_data['name'], self.guild, interaction.user,
+            dashboard_message_id=self.parent_view.dashboard_message_id if self.parent_view else None,
+            dashboard_channel_id=self.parent_view.dashboard_channel_id if self.parent_view else None
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=channel_view)
+
+class ChannelsInCategoryView(discord.ui.View):
+    """View showing channels in a specific category"""
+    def __init__(self, bot, channels, category_name, guild, user, dashboard_message_id=None, dashboard_channel_id=None):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.channels = channels
+        self.category_name = category_name
+        self.guild = guild
+        self.user = user
+        self.dashboard_message_id = dashboard_message_id
+        self.dashboard_channel_id = dashboard_channel_id
+        
+        # Add channel dropdown
+        self.add_item(ChannelInCategoryDropdown(bot, channels, category_name, self))
+        
+        # Add "Select All" button
+        select_all_btn = discord.ui.Button(label="✅ Select All Channels", style=discord.ButtonStyle.success, emoji="✅", row=1)
+        select_all_btn.callback = self.select_all_channels
+        self.add_item(select_all_btn)
+        
+        # Add back to categories button
+        back_btn = discord.ui.Button(label="← Back to Categories", style=discord.ButtonStyle.secondary, emoji="📁", row=1)
+        back_btn.callback = self.back_to_categories
+        self.add_item(back_btn)
+    
+    async def select_all_channels(self, interaction: discord.Interaction):
+        """Subscribe to all channels in this category at once"""
+        try:
+            # Get all channel IDs
+            all_channel_ids = [str(channel.id) for channel in self.channels]
+            
+            if not all_channel_ids:
+                await interaction.response.send_message("❌ No channels to select!", ephemeral=True)
+                return
+            
+            # Show confirmation
+            channel_list = "\n".join([f"• #{channel.name}" for channel in self.channels[:10]])
+            if len(self.channels) > 10:
+                channel_list += f"\n... and {len(self.channels) - 10} more"
+            
+            embed = discord.Embed(
+                title="✅ Select All Channels",
+                description=f"You're about to subscribe to **ALL {len(self.channels)} channels** in **{self.category_name}**",
+                color=0x57F287
+            )
+            
+            embed.add_field(
+                name="📋 Channels:",
+                value=channel_list,
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⚙️ Next Step:",
+                value="Configure your position sizing settings for all these channels",
+                inline=False
+            )
+            
+            embed.set_footer(text="Same settings will apply to all selected channels")
+            
+            # Show multi-channel subscription modal
+            modal = MultiChannelSubscribeModal(self.bot, all_channel_ids, self.guild)
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            logger.error(f"Error in select_all_channels: {e}")
+            await interaction.response.send_message("❌ Error selecting all channels. Please try again.", ephemeral=True)
+    
+    async def back_to_categories(self, interaction: discord.Interaction):
+        """Go back to category selection"""
+        embed = discord.Embed(
+            title="",
+            description="",
+            color=0x5865F2
+        )
+        
+        embed.add_field(
+            name="",
+            value="📢 **Channel Subscription Manager**\nSelect a category to view channels",
+            inline=False
+        )
+        
+        instructions = (
+            "```\n"
+            "1. Select a category from dropdown\n"
+            "2. Choose channels in that category\n"
+            "3. Configure trading settings\n"
+            "4. Signals auto-execute trades\n"
+            "```"
+        )
+        
+        embed.add_field(
+            name="🎯 How It Works",
+            value=instructions,
+            inline=False
+        )
+        
+        # Get categories count
+        view = CategorySelectionView(self.bot, self.guild, interaction.user)
+        categories_count = len(view.get_categories())
+        
+        server_info = (
+            f"▸ Server: **{self.guild.name}**\n"
+            f"▸ Categories found: {categories_count}\n"
+            f"▸ Ready for selection"
+        )
+        
+        embed.add_field(
+            name="🔄 Server Data",
+            value=server_info,
+            inline=False
+        )
+        
+        embed.set_footer(text="Auto Trade Bot • Category Selection")
+        
+        category_view = CategorySelectionView(self.bot, self.guild, interaction.user)
+        await interaction.response.edit_message(embed=embed, view=category_view)
+
+class ChannelInCategoryDropdown(discord.ui.Select):
+    """Dropdown showing channels in a specific category"""
+    def __init__(self, bot, channels, category_name, parent_view=None):
+        self.bot = bot
+        self.channels = channels
+        self.category_name = category_name
+        self.parent_view = parent_view  # Store parent view reference
+        
+        # Create a mapping of channel ID to channel object for quick lookup
+        self.channel_map = {str(channel.id): channel for channel in channels}
+        
+        # Log channel mapping for debugging
+        logger.info(f"Creating dropdown for category '{category_name}' with {len(channels)} channels")
+        for channel in channels[:5]:  # Log first 5 channels
+            logger.info(f"  - #{channel.name} (ID: {channel.id})")
+        
+        # Create options from channels (max 25 per Discord limit)
+        options = []
+        for channel in channels[:25]:
+            options.append(discord.SelectOption(
+                label=f"#{channel.name}",
+                description=f"Subscribe to {channel.name}",
+                value=str(channel.id),
+                emoji="📢"
+            ))
+        
+        # Fallback
+        if not options:
+            options.append(discord.SelectOption(
+                label="No channels",
+                description="No accessible channels in this category",
+                value="none"
+            ))
+        
+        # Allow multiple selections (up to 10 channels at once)
+        max_selections = min(len([opt for opt in options if opt.value != "none"]), 10)
+        
+        super().__init__(
+            placeholder=f"📢 Select channel(s) from {category_name}...",
+            min_values=1,
+            max_values=max_selections if max_selections > 0 else 1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        """When user selects channel(s)"""
+        # Check for "none" value
+        if "none" in self.values:
+            await interaction.response.send_message("❌ No channels available.", ephemeral=True)
+            return
+        
+        # Log selected values for debugging
+        logger.info(f"User {interaction.user.name} selected channel IDs: {self.values}")
+        
+        # If only one channel selected, show single modal
+        if len(self.values) == 1:
+            selected_channel_id = self.values[0]
+            
+            # Get the channel object from our stored map
+            channel = self.channel_map.get(selected_channel_id)
+            
+            if not channel:
+                # Fallback to guild lookup
+                logger.warning(f"Channel {selected_channel_id} not in channel_map, trying guild lookup")
+                channel = interaction.guild.get_channel(int(selected_channel_id))
+                
+            if not channel:
+                logger.error(f"Channel {selected_channel_id} not found in guild!")
+                await interaction.response.send_message(f"❌ Channel not found! ID: {selected_channel_id}", ephemeral=True)
+                return
+            
+            logger.info(f"Showing modal for channel: #{channel.name} (ID: {channel.id})")
+            
+            # Show subscription modal for single channel
+            # Note: SubscribeModal is defined later in this file (line ~1753)
+            # This works because callback() is only executed at runtime, not at class definition
+            modal = SubscribeModal(self.bot)
+            # Store the channel info for the modal
+            modal.channel_id = selected_channel_id
+            modal.channel_name = channel.name
+            # Get dashboard message info from parent view
+            if self.parent_view:
+                modal.dashboard_channel_id = self.parent_view.dashboard_channel_id
+                modal.dashboard_message_id = self.parent_view.dashboard_message_id
+                logger.info(f"Passing dashboard message ID: {modal.dashboard_message_id} from parent view")
+            else:
+                logger.warning("No parent view reference - dashboard message info not available")
+            
+            await interaction.response.send_modal(modal)
+        else:
+            # Multiple channels selected - show multi-channel modal
+            logger.info(f"Showing multi-channel modal for {len(self.values)} channels")
+            modal = MultiChannelSubscribeModal(self.bot, self.values, interaction.guild)
+            await interaction.response.send_modal(modal)
+
+# Simple Channel Selection View (kept for backward compatibility)
+class SimpleChannelSelectView(discord.ui.View):
+    """Simplified channel selection with dropdown list"""
+    def __init__(self, bot, channels, user):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.channels = channels
+        self.user = user
+        
+        # Add the channel dropdown
+        self.add_item(SimpleChannelDropdown(bot, channels, user))
+        
+        # Add back button
+        back_btn = discord.ui.Button(label="← Back to Setup", style=discord.ButtonStyle.secondary, emoji="⚙️")
+        back_btn.callback = self.back_to_setup
+        self.add_item(back_btn)
+    
+    async def back_to_setup(self, interaction: discord.Interaction):
+        """Navigate back to setup menu"""
+        embed = discord.Embed(title="", description="", color=0x5865F2)
+        
+        embed.add_field(
+            name="",
+            value=f"⚙️ **Setup & Configuration**\n{interaction.user.mention}, customize your trading experience",
+            inline=False
+        )
+        
+        setup_options = (
+            "```\n"
+            "🔑 API Key Management\n"
+            "   Add and manage exchange credentials\n\n"
+            "📢 Channel Subscriptions\n"
+            "   Subscribe to signal channels\n\n"
+            "📋 View Settings\n"
+            "   Review your current configuration\n"
+            "```"
+        )
+        
+        embed.add_field(name="📋 Available Options", value=setup_options, inline=False)
+        
+        security = (
+            "▸ All credentials are encrypted\n"
+            "▸ Secure database storage\n"
+            "▸ Zero data sharing policy"
+        )
+        
+        embed.add_field(name="🔐 Security Features", value=security, inline=False)
+        embed.set_footer(text="Auto Trade Bot • Secure Configuration Panel")
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class SimpleChannelDropdown(discord.ui.Select):
+    """Simple dropdown with list of channels"""
+    def __init__(self, bot, channels, user):
+        self.bot = bot
+        self.user = user
+        
+        # Create options from channels (max 25 per Discord limit)
+        options = []
+        for channel in channels[:25]:  # Discord limit
+            # Show category if it exists
+            category_name = f" ({channel.category.name})" if channel.category else ""
+            options.append(discord.SelectOption(
+                label=f"#{channel.name}",
+                description=f"Subscribe to {channel.name}{category_name}"[:100],
+                value=str(channel.id),
+                emoji="📢"
+            ))
+        
+        super().__init__(
+            placeholder="Select a channel to subscribe...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        """When user selects a channel"""
+        selected_channel_id = self.values[0]
+        
+        # Get the channel object
+        channel = interaction.guild.get_channel(int(selected_channel_id))
+        
+        if not channel:
+            await interaction.response.send_message("❌ Channel not found!", ephemeral=True)
+            return
+        
+        # Show subscription modal with the channel pre-selected
+        # SubscribeModal is defined in this file (line ~1775)
+        modal = SubscribeModal(self.bot)
+        # Store the channel info for the modal
+        modal.channel_id = selected_channel_id
+        modal.channel_name = channel.name
+        modal.dashboard_channel_id = interaction.channel_id  # Store dashboard channel
+        modal.dashboard_message_id = interaction.message.id  # Store message ID to fetch later
+        
+        await interaction.response.send_modal(modal)
+
+class ChannelSelectionView(discord.ui.View):
+    def __init__(self, bot, guild=None, requester: discord.abc.User | None = None):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild = guild
+        self.requester = requester
+        self.current_page = 0
+        self.channels_per_page = 10
+        
+        # Create dropdown with current guild information
+        self.channel_dropdown = ChannelSelectDropdown(bot, guild, requester, self.current_page, self.channels_per_page)
+        self.add_item(self.channel_dropdown)
+        
+        # Add navigation buttons
+        self.previous_button = discord.ui.Button(label="◀️ Previous", style=discord.ButtonStyle.secondary, disabled=True)
+        self.next_button = discord.ui.Button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+        self.refresh_button = discord.ui.Button(label="🔄 Refresh", style=discord.ButtonStyle.success, emoji="🔄")
+        self.add_item(self.previous_button)
+        self.add_item(self.next_button)
+        self.add_item(self.refresh_button)
+    
+    def refresh_channels(self, requester: discord.abc.User | None = None):
+        """Refresh the channel list to get latest server channels"""
+        try:
+            if requester is not None:
+                self.requester = requester
+            # Update the dropdown options
+            success = self.channel_dropdown.update_channel_options(self.requester, self.current_page, self.channels_per_page)
+            self.update_buttons()
+            return success
+        except Exception as e:
+            logger.error(f"Error refreshing channels: {e}")
+            return False
+    
+    def update_buttons(self):
+        """Update the state of navigation buttons"""
+        total_channels = self.get_total_channels()
+        max_page = (total_channels - 1) // self.channels_per_page if total_channels > 0 else 0
+        self.previous_button.disabled = self.current_page <= 0
+        self.next_button.disabled = self.current_page >= max_page
+    
+    def get_total_channels(self):
+        """Get total number of accessible channels"""
+        try:
+            guild = self.guild or (self.bot.guilds[0] if self.bot.guilds else None)
+            if guild:
+                bot_member = guild.get_member(self.bot.user.id)
+                user_member = None
+                if self.requester:
+                    user_member = guild.get_member(self.requester.id)
+                text_channels = [
+                    channel for channel in guild.channels
+                    if isinstance(channel, discord.TextChannel)
+                    and bot_member and channel.permissions_for(bot_member).read_messages
+                    and (not user_member or (channel.permissions_for(user_member).read_messages and channel.permissions_for(user_member).view_channel))
+                ]
+                return len(text_channels)
+        except Exception:
+            pass
+        return 0
+    
+    @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary)
+    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.refresh_channels(interaction.user)
+            self.update_buttons()
+            await interaction.response.edit_message(view=self)
+    
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        total_channels = self.get_total_channels()
+        max_page = (total_channels - 1) // self.channels_per_page if total_channels > 0 else 0
+        if self.current_page < max_page:
+            self.current_page += 1
+            self.refresh_channels(interaction.user)
+            self.update_buttons()
+            await interaction.response.edit_message(view=self)
+    
+    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.success, emoji="🔄")
+    async def refresh_channels_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Refresh the channel list
+        await interaction.response.defer()
+        
+        try:
+            # Reset to page 0 and update
+            self.current_page = 0
+            success = self.refresh_channels(interaction.user)
+            
+            embed = discord.Embed(
+                title="📢 Channel Subscription",
+                description="Channel list refreshed! Select channels you want to subscribe to:",
+                color=0x0099ff
+            )
+            
+            if success:
+                channel_count = len([opt for opt in self.channel_dropdown.options if opt.value != "none"])
+                total_channels = self.get_total_channels()
+                embed.add_field(
+                    name="✅ Channels Updated",
+                    value=f"Showing **{channel_count}** of **{total_channels}** accessible channels in **{interaction.guild.name}**",
+                    inline=False
+                )
+                embed.add_field(
+                    name="📋 Next Steps",
+                    value="• Select channels from the dropdown\n• Use navigation buttons for more channels\n• Configure your trading settings\n• Start receiving trading signals",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="⚠️ No Channels Found",
+                    value="No accessible text channels found. Please check bot permissions.",
+                    inline=False
+                )
+            
+            await interaction.edit_original_response(embed=embed, view=self)
+            
+        except Exception as e:
+            logger.error(f"Error refreshing channels: {e}")
+            await interaction.followup.send("❌ Error refreshing channels. Please try again.", ephemeral=True)
+    
+    @discord.ui.button(label="�🔙 Back to Setup", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="⚙️ Setup Menu",
+            description="Configure your trading bot:",
+            color=0x0099ff
+        )
+        embed.add_field(
+            name="🔑 Add API Key",
+            value="Click below to add your exchange API credentials securely",
+            inline=False
+        )
+        embed.add_field(
+            name="📢 Subscribe to Channels", 
+            value="Subscribe to channels for automatic signal trading",
+            inline=False
+        )
+        
+        view = SetupView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class ChannelSelectDropdown(discord.ui.Select):
+    def __init__(self, bot, guild=None, requester: discord.abc.User | None = None, page=0, per_page=10):
+        self.bot = bot
+        self.guild = guild
+        self.requester = requester
+        self.page = page
+        self.per_page = per_page
+        
+        # Initialize with placeholder - real options will be set dynamically
+        super().__init__(
+            placeholder="🔽 Select channels to subscribe to...",
+            min_values=1,
+            max_values=1,  # Will be updated dynamically
+            options=[discord.SelectOption(label="Loading...", value="loading")]
+        )
+        
+        # Update options immediately
+        self.update_channel_options(self.requester, self.page, self.per_page)
+    
+    def update_channel_options(self, requester: discord.abc.User | None = None, page=0, per_page=10):
+        """Dynamically fetch and update channel options from the server with pagination"""
+        options = []
+        
+        try:
+            # Use the guild passed or get from bot
+            guild = self.guild or (self.bot.guilds[0] if self.bot.guilds else None)
+            
+            if guild:
+                bot_member = guild.get_member(self.bot.user.id)
+                user_member = None
+                if requester:
+                    user_member = guild.get_member(requester.id)
+                if requester and user_member is None:
+                    try:
+                        user_member = guild.get_member_named(requester.name)
+                    except Exception:
+                        user_member = None
+                if requester and user_member is None:
+                    logger.debug(
+                        "Channel selection: requester %s not cached in guild %s",
+                        getattr(requester, "id", "unknown"),
+                        guild.name,
+                    )
+                
+                # Get all current text channels with permissions
+                text_channels = []
+                for channel in guild.channels:
+                    if not isinstance(channel, discord.TextChannel):
+                        continue
+                    if not bot_member:
+                        continue
+                    bot_perms = channel.permissions_for(bot_member)
+                    if not bot_perms.read_messages:
+                        continue
+                    if user_member:
+                        user_perms = channel.permissions_for(user_member)
+                        if not (user_perms.read_messages and user_perms.view_channel):
+                            continue
+                    text_channels.append(channel)
+                
+                # Sort channels by name for better UX
+                text_channels.sort(key=lambda c: c.name.lower())
+                
+                # Paginate
+                start_idx = page * per_page
+                end_idx = start_idx + per_page
+                page_channels = text_channels[start_idx:end_idx]
+                
+                # Create options for each channel in this page
+                for channel in page_channels:
+                    options.append(discord.SelectOption(
+                        label=f"#{channel.name}",
+                        description=f"Subscribe to signals in #{channel.name}",
+                        value=str(channel.id),
+                        emoji="📢"
+                    ))
+                    
+                logger.info(
+                    "Channel selector page %d showing %s/%s accessible channels in %s",
+                    page + 1,
+                    len(page_channels),
+                    len(text_channels),
+                    guild.name,
+                )
+        
+        except Exception as e:
+            logger.error(f"Error updating channel options: {e}")
+        
+        # Fallback if no channels found
+        if not options:
+            options.append(discord.SelectOption(
+                label="No channels available",
+                description="No accessible text channels found",
+                value="none"
+            ))
+        
+        # Update the select options and max values
+        self.options = options
+        self.max_values = min(len([opt for opt in options if opt.value != "none"]), 10)
+        
+        return len(options) > 1  # Return True if real channels found
+    
+    async def callback(self, interaction: discord.Interaction):
+        if "none" in self.values:
+            await interaction.response.send_message("❌ No channels available to subscribe to.", ephemeral=True)
+            return
+        
+        # Show subscription configuration modal for selected channels
+        modal = MultiChannelSubscribeModal(self.bot, self.values, interaction.guild)
+        await interaction.response.send_modal(modal)
+
+class BackButton(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="🔙 Back to Dashboard", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🤖 Trading Bot Dashboard",
+            description="Welcome back! Choose an option below:",
+            color=0x0099ff
+        )
+        view = DashboardView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+# Modals for user input  
+class APIKeyModal(discord.ui.Modal):
+    def __init__(self, bot, view, exchange="hyperliquid"):
+        super().__init__(title=f"🔑 Add API Key - {exchange.capitalize()}")
+        self.bot = bot
+        self.view = view
+        self.selected_exchange = exchange
+        
+        # Different fields based on exchange
+        if exchange.lower() == 'hyperliquid':
+            # Hyperliquid uses wallet address and private key
+            self.wallet_address = discord.ui.TextInput(
+                label="Wallet Address",
+                placeholder="0x1234567890abcdef...",
+                min_length=42,
+                max_length=42,
+                required=True
+            )
+            
+            self.private_key = discord.ui.TextInput(
+                label="Private Key",
+                placeholder="Your private key (kept secure)",
+                min_length=64,
+                max_length=66,
+                required=True,
+                style=discord.TextStyle.paragraph
+            )
+            
+            self.add_item(self.wallet_address)
+            self.add_item(self.private_key)
+        else:
+            # Other exchanges use API key and secret
+            self.api_key = discord.ui.TextInput(
+                label="API Key",
+                placeholder="Your API key",
+                max_length=200,
+                required=True
+            )
+            
+            self.api_secret = discord.ui.TextInput(
+                label="API Secret", 
+                placeholder="Your API secret",
+                max_length=200,
+                required=True,
+                style=discord.TextStyle.paragraph
+            )
+            
+            self.add_item(self.api_key)
+            self.add_item(self.api_secret)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            self.bot.db.add_user(str(interaction.user.id), interaction.user.name)
+            
+            # Always use live trading (testnet = False)
+            is_testnet = False
+            exchange_name = self.selected_exchange.lower()
+            
+            # Send initial validating message
+            await interaction.response.send_message(
+                "🔄 **Validating Credentials...**\n\n"
+                "⏳ Please wait while we verify your API key with the exchange...",
+                ephemeral=True
+            )
+            
+            # Handle Hyperliquid with validation
+            if exchange_name == 'hyperliquid':
+                wallet = self.wallet_address.value.strip()
+                private_key = self.private_key.value.strip()
+                
+                # Validate wallet address format
+                if not wallet.startswith('0x') or len(wallet) != 42:
+                    await interaction.edit_original_response(
+                        content="❌ Invalid wallet address format. Must start with 0x and be 42 characters."
+                    )
+                    return
+                
+                # Validate private key format
+                if private_key.startswith('0x'):
+                    private_key = private_key[2:]
+                if len(private_key) != 64:
+                    await interaction.edit_original_response(
+                        content="❌ Invalid private key format. Must be 64 hex characters."
+                    )
+                    return
+                
+                # ✅ VALIDATE CREDENTIALS WITH HYPERLIQUID
+                try:
+                    from connectors.hyperliquid_connector import HyperliquidConnector
+                    connector = HyperliquidConnector()
+                    
+                    validation_result = await connector.validate_credentials(
+                        wallet_address=wallet,
+                        private_key=private_key,
+                        testnet=is_testnet
+                    )
+                    
+                    if not validation_result['valid']:
+                        await interaction.edit_original_response(
+                            content=f"❌ **Credential Validation Failed**\n\n"
+                                    f"{validation_result['message']}\n\n"
+                                    f"**Please check:**\n"
+                                    f"▸ Wallet address is correct\n"
+                                    f"▸ Private key matches the wallet\n"
+                                    f"▸ You have network connectivity"
+                        )
+                        return
+                    
+                    # Credentials are valid!
+                    balance = validation_result.get('balance', 0)
+                    logger.info(f"✅ Credentials validated for {wallet[:10]}... (Balance: ${balance:.2f})")
+                    
+                except Exception as val_err:
+                    logger.error(f"Validation error: {val_err}")
+                    await interaction.edit_original_response(
+                        content=f"❌ **Validation Error**\n\n"
+                                f"Unable to validate credentials: {str(val_err)}\n\n"
+                                f"The API key format appears correct, but we couldn't verify it with Hyperliquid."
+                    )
+                    return
+                
+                # Add API key to database (wallet in both api_key and api_passphrase)
+                success = self.bot.db.add_api_key(
+                    str(interaction.user.id),
+                    exchange_name,
+                    api_key=wallet,  # Store wallet in api_key field
+                    api_secret="",
+                    api_passphrase=wallet,  # Also in passphrase for compatibility
+                    testnet=is_testnet,
+                    private_key=private_key
+                )
+                
+                if not success:
+                    await interaction.edit_original_response(
+                        content="❌ This wallet address is already in use by another user."
+                    )
+                    return
+                
+                # Success message with balance
+                success_text = (
+                    f"✅ **API Key Added Successfully!**\n\n"
+                    f"🏦 Exchange: **{exchange_name.capitalize()}**\n"
+                    f"🔴 Environment: Live Trading\n"
+                    f"💰 Balance: ${balance:.2f}\n"
+                    f"🔒 Security: Encrypted & Secure\n\n"
+                    f"🔄 You can now check balance, subscribe to channels, and start trading!"
+                )
+                
+                await interaction.edit_original_response(content=success_text)
+                
+            else:
+                # Other exchanges (no validation yet)
+                success = self.bot.db.add_api_key(
+                    str(interaction.user.id),
+                    exchange_name,
+                    self.api_key.value,
+                    self.api_secret.value,
+                    testnet=is_testnet
+                )
+                
+                if not success:
+                    await interaction.edit_original_response(
+                        content=f"❌ This API key is already registered by another user."
+                    )
+                    return
+                
+                success_text = (
+                    f"✅ **API Key Added Successfully!**\n\n"
+                    f"🏦 Exchange: **{exchange_name.capitalize()}**\n"
+                    f"🔴 Environment: Live Trading\n"
+                    f"🔒 Security: Encrypted & Secure\n\n"
+                    f"🔄 You can now check balance, subscribe to channels, and start trading!"
+                )
+                
+                await interaction.edit_original_response(content=success_text)
+            
+        except Exception as e:
+            logger.error(f"API key error: {e}")
+            try:
+                await interaction.edit_original_response(
+                    content=f"❌ Error adding API key: {str(e)}\nPlease try again."
+                )
+            except:
+                await interaction.response.send_message(
+                    f"❌ Error adding API key: {str(e)}\nPlease try again.",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            logger.error(f"API key error: {e}")
+            await interaction.response.send_message("❌ Error adding API key. Please try again.", ephemeral=True)
+
+class SubscribeModal(discord.ui.Modal):
+    def __init__(self, bot, view=None):
+        super().__init__(title="📢 Subscribe to Channel - Simplified")
+        self.bot = bot
+        self.view = view
+        # These will be set by the calling code
+        self.channel_id = None
+        self.channel_name = None
+        self.dashboard_channel_id = None  # Store dashboard channel for confirmation
+        self.dashboard_message_id = None  # Store dashboard message ID to fetch and edit it
+    
+    exchange = discord.ui.TextInput(
+        label="Exchange (hyperliquid)",
+        placeholder="Enter: hyperliquid",
+        required=True,
+        max_length=50
+    )
+    
+    position_mode = discord.ui.TextInput(
+        label="Position Mode (fixed/percentage)",
+        placeholder="percentage",
+        default="percentage",
+        max_length=20
+    )
+    
+    amount = discord.ui.TextInput(
+        label="Fixed Amount ($) OR Percentage (%)",
+        placeholder="100 (if fixed) or 10 (if percentage)",
+        default="10",
+        max_length=10
+    )
+    
+    max_risk = discord.ui.TextInput(
+        label="Max Risk Percentage (Safety Cap)",
+        placeholder="2.0",
+        default="2.0",
+        max_length=10
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Use stored channel_id or fallback to interaction channel
+            target_channel_id = self.channel_id if self.channel_id else str(interaction.channel.id)
+            target_channel_name = self.channel_name if self.channel_name else interaction.channel.name
+            
+            logger.info(f"SubscribeModal: User {interaction.user.name} subscribing to channel {target_channel_name} (ID: {target_channel_id})")
+            
+            # Validate position mode
+            mode = self.position_mode.value.lower()
+            if mode not in ['fixed', 'percentage']:
+                await interaction.response.send_message(
+                    "❌ **Invalid Position Mode**\n\nPlease enter either 'fixed' or 'percentage'",
+                    ephemeral=True
+                )
+                return
+            
+            # Parse amount
+            try:
+                amount_val = float(self.amount.value)
+                max_risk_val = float(self.max_risk.value)
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ **Invalid Numbers**\n\nPlease enter valid numbers for amount and max risk",
+                    ephemeral=True
+                )
+                return
+            
+            # Validate based on mode
+            if mode == 'fixed' and amount_val <= 0:
+                await interaction.response.send_message(
+                    "❌ **Invalid Amount**\n\nFixed amount must be greater than 0",
+                    ephemeral=True
+                )
+                return
+            
+            if mode == 'percentage' and (amount_val <= 0 or amount_val > 100):
+                await interaction.response.send_message(
+                    "❌ **Invalid Percentage**\n\nPercentage must be between 0 and 100",
+                    ephemeral=True
+                )
+                return
+            
+            if max_risk_val <= 0 or max_risk_val > 10:
+                await interaction.response.send_message(
+                    "❌ **Invalid Max Risk**\n\nMax risk must be between 0 and 10%",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if user is already subscribed to this channel
+            existing_subscription = self.bot.db.get_subscription(str(interaction.user.id), target_channel_id)
+            if existing_subscription:
+                # Get existing settings
+                existing_mode = existing_subscription.get('position_mode', 'percentage')
+                existing_amount = existing_subscription.get('fixed_amount' if existing_mode == 'fixed' else 'percentage_of_balance', 10.0)
+                
+                await interaction.response.send_message(
+                    f"⚠️ **Already Subscribed!**\n\n"
+                    f"You are already subscribed to **#{target_channel_name}**\n\n"
+                    f"📊 Current Settings:\n"
+                    f"🏦 Exchange: **{existing_subscription.get('exchange', 'N/A').capitalize()}**\n"
+                    f"� Mode: **{existing_mode.upper()}**\n"
+                    f"{'💵 Amount' if existing_mode == 'fixed' else '📈 Percentage'}: **{'$' if existing_mode == 'fixed' else ''}{existing_amount}{'%' if existing_mode == 'percentage' else ''}**\n"
+                    f"⚠️ Max Risk: **{existing_subscription.get('max_risk', 'N/A')}%**\n\n"
+                    f"💡 To change settings, unsubscribe first and then resubscribe.",
+                    ephemeral=True
+                )
+                return
+            
+            api_key = self.bot.db.get_user_api_key(str(interaction.user.id), self.exchange.value.lower())
+            if not api_key:
+                # Get list of exchanges user HAS API keys for
+                user_api_keys = self.bot.db.get_user_all_api_keys(str(interaction.user.id))
+                
+                if not user_api_keys:
+                    # No API keys at all
+                    await interaction.response.send_message(
+                        f"❌ **No API Keys Found**\n\n"
+                        f"You don't have any API keys configured yet.\n\n"
+                        f"**📝 To add an API key:**\n"
+                        f"▸ Use `/add_api_key` command\n"
+                        f"▸ Supported exchange: hyperliquid\n\n"
+                        f"**💡 Example:**\n"
+                        f"`/add_api_key exchange:hyperliquid api_key:YOUR_WALLET api_secret:YOUR_PRIVATE_KEY`",
+                        ephemeral=True
+                    )
+                else:
+                    # User has API keys but not for this exchange
+                    available_exchanges = ', '.join([key['exchange'].capitalize() for key in user_api_keys])
+                    await interaction.response.send_message(
+                        f"❌ **No API Key for {self.exchange.value.capitalize()}**\n\n"
+                        f"You entered exchange: **{self.exchange.value}**\n"
+                        f"But you only have API keys for: **{available_exchanges}**\n\n"
+                        f"**✅ Options:**\n"
+                        f"1️⃣ Change the exchange field in the form to match your API key\n"
+                        f"2️⃣ Or add a new API key for {self.exchange.value}:\n"
+                        f"   `/add_api_key exchange:{self.exchange.value} api_key:YOUR_KEY api_secret:YOUR_SECRET`",
+                        ephemeral=True
+                    )
+                return
+            
+            # Use the stored channel ID instead of interaction.channel.id
+            self.bot.db.add_channel(target_channel_id, target_channel_name)
+            
+            # Subscribe with new simplified system
+            fixed_amount = amount_val if mode == 'fixed' else 100.0
+            percentage = amount_val if mode == 'percentage' else 10.0
+            
+            self.bot.db.subscribe_to_channel(
+                str(interaction.user.id),
+                target_channel_id,
+                self.exchange.value.lower(),
+                1.0,  # Legacy position_size (kept for compatibility)
+                max_risk_val,
+                mode,
+                fixed_amount,
+                percentage
+            )
+            
+            # Create example text
+            if mode == 'fixed':
+                example_text = f"Every trade uses ${amount_val:.2f}"
+            else:
+                example_balance = 1000
+                example_amount = example_balance * (amount_val / 100)
+                example_text = f"With $1,000 balance: {amount_val}% = ${example_amount:.2f} per trade"
+            
+            success_text = (
+                f"\n\n───────────────────────────\n"
+                f"✅ **Successfully Subscribed!**\n\n"
+                f"📢 Channel: **#{target_channel_name}**\n"
+                f"🏦 Exchange: **{self.exchange.value.capitalize()}**\n"
+                f"� Mode: **{mode.upper()}**\n"
+                f"{'💵 Fixed Amount' if mode == 'fixed' else '📈 Percentage'}: **{'$' if mode == 'fixed' else ''}{amount_val:.2f}{'%' if mode == 'percentage' else ''}**\n"
+                f"⚠️ Max Risk: **{max_risk_val}%**\n\n"
+                f"📝 Example: {example_text}\n\n"
+                f"🚀 Trading signals posted in this channel will now trigger automatic trades!"
+            )
+            
+            # Edit dashboard message to append confirmation
+            await interaction.response.defer(ephemeral=True)
+            
+            if self.dashboard_channel_id and self.dashboard_message_id:
+                try:
+                    logger.info(f"Attempting to edit dashboard message ID: {self.dashboard_message_id} in channel {self.dashboard_channel_id}")
+                    
+                    # Fetch the dashboard channel
+                    dashboard_channel = self.bot.get_channel(self.dashboard_channel_id)
+                    if not dashboard_channel:
+                        logger.info(f"Channel not in cache, fetching...")
+                        dashboard_channel = await self.bot.fetch_channel(self.dashboard_channel_id)
+                    
+                    logger.info(f"Dashboard channel found: {dashboard_channel.name}")
+                    
+                    # Fetch the fresh dashboard message
+                    dashboard_message = await dashboard_channel.fetch_message(self.dashboard_message_id)
+                    
+                    logger.info(f"Dashboard message fetched successfully")
+                    
+                    # Get current message content
+                    current_content = dashboard_message.content or ""
+                    
+                    # Append confirmation to existing content
+                    new_content = current_content + success_text
+                    
+                    # Edit the dashboard message to append confirmation (keep the view)
+                    await dashboard_message.edit(content=new_content, view=dashboard_message.components[0] if dashboard_message.components else None)
+                    logger.info(f"Appended subscription confirmation to dashboard message")
+                except discord.NotFound:
+                    logger.error(f"Dashboard message not found (deleted?)")
+                    # Fallback to ephemeral
+                    await interaction.followup.send(success_text, ephemeral=True)
+                except Exception as e:
+                    logger.error(f"Failed to edit dashboard message: {e}", exc_info=True)
+                    # Fallback to ephemeral
+                    await interaction.followup.send(success_text, ephemeral=True)
+            else:
+                # Fallback to ephemeral if no dashboard message reference
+                logger.warning("No dashboard channel or message ID stored")
+                await interaction.followup.send(success_text, ephemeral=True)
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter valid numbers for position size and max risk.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Subscribe error: {e}")
+            await interaction.response.send_message("❌ Error subscribing to channel. Please try again.", ephemeral=True)
+
+class MultiChannelSubscribeModal(discord.ui.Modal):
+    def __init__(self, bot, channel_ids, guild):
+        super().__init__(title="📢 Subscribe - Simplified")
+        self.bot = bot
+        self.channel_ids = channel_ids
+        self.guild = guild
+    
+    exchange = discord.ui.TextInput(
+        label="Exchange (hyperliquid)",
+        placeholder="Enter: hyperliquid",
+        required=True,
+        max_length=50
+    )
+    
+    position_mode = discord.ui.TextInput(
+        label="Position Mode (fixed/percentage)",
+        placeholder="percentage",
+        default="percentage",
+        max_length=20
+    )
+    
+    amount = discord.ui.TextInput(
+        label="Fixed Amount ($) OR Percentage (%)",
+        placeholder="100 (if fixed) or 10 (if percentage)",
+        default="10",
+        max_length=10
+    )
+    
+    max_risk = discord.ui.TextInput(
+        label="Max Risk % (Safety Cap)",
+        placeholder="2.0",
+        default="2.0",
+        max_length=10
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Validate position mode
+            mode = self.position_mode.value.lower()
+            if mode not in ['fixed', 'percentage']:
+                await interaction.response.send_message(
+                    "❌ **Invalid Position Mode**\n\nPlease enter either 'fixed' or 'percentage'",
+                    ephemeral=True
+                )
+                return
+            
+            api_key = self.bot.db.get_user_api_key(str(interaction.user.id), self.exchange.value.lower())
+            if not api_key:
+                # Get list of exchanges user HAS API keys for
+                user_api_keys = self.bot.db.get_user_all_api_keys(str(interaction.user.id))
+                
+                if not user_api_keys:
+                    # No API keys at all
+                    await interaction.response.send_message(
+                        f"❌ **No API Keys Found**\n\n"
+                        f"You don't have any API keys configured yet.\n\n"
+                        f"**📝 To add an API key:**\n"
+                        f"▸ Use `/add_api_key` command\n"
+                        f"▸ Supported exchange: hyperliquid\n\n"
+                        f"**💡 Example:**\n"
+                        f"`/add_api_key exchange:hyperliquid api_key:YOUR_WALLET api_secret:YOUR_PRIVATE_KEY`",
+                        ephemeral=True
+                    )
+                else:
+                    # User has API keys but not for this exchange
+                    available_exchanges = ', '.join([key['exchange'].capitalize() for key in user_api_keys])
+                    await interaction.response.send_message(
+                        f"❌ **No API Key for {self.exchange.value.capitalize()}**\n\n"
+                        f"You entered exchange: **{self.exchange.value}**\n"
+                        f"But you only have API keys for: **{available_exchanges}**\n\n"
+                        f"**✅ Options:**\n"
+                        f"1️⃣ Change the exchange field in the form to match your API key\n"
+                        f"2️⃣ Or add a new API key for {self.exchange.value}:\n"
+                        f"   `/add_api_key exchange:{self.exchange.value} api_key:YOUR_KEY api_secret:YOUR_SECRET`",
+                        ephemeral=True
+                    )
+                return
+            
+            try:
+                amount_val = float(self.amount.value)
+                max_risk_val = float(self.max_risk.value)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid numbers", ephemeral=True)
+                return
+            
+            # Validate
+            if mode == 'fixed' and amount_val <= 0:
+                await interaction.response.send_message("❌ Fixed amount must be > 0", ephemeral=True)
+                return
+            if mode == 'percentage' and (amount_val <= 0 or amount_val > 100):
+                await interaction.response.send_message("❌ Percentage must be 0-100", ephemeral=True)
+                return
+            if max_risk_val <= 0 or max_risk_val > 10:
+                await interaction.response.send_message("❌ Max risk must be 0-10%", ephemeral=True)
+                return
+            
+            position_size_val = 1.0  # Legacy
+            fixed_amount = amount_val if mode == 'fixed' else 100.0
+            percentage = amount_val if mode == 'percentage' else 10.0
+            
+            # Subscribe to all selected channels
+            subscribed_channels = []
+            failed_channels = []
+            
+            for channel_id in self.channel_ids:
+                try:
+                    channel = self.guild.get_channel(int(channel_id))
+                    if channel and isinstance(channel, discord.TextChannel):
+                        # Check if bot can see the channel
+                        bot_member = self.guild.get_member(self.bot.user.id)
+                        if bot_member and channel.permissions_for(bot_member).read_messages:
+                            # Add channel to database
+                            self.bot.db.add_channel(str(channel.id), channel.name)
+                            
+                            # Subscribe user to channel
+                            self.bot.db.subscribe_to_channel(
+                                str(interaction.user.id),
+                                str(channel.id),
+                                self.exchange.value.lower(),
+                                position_size_val,
+                                max_risk_val,
+                                mode,
+                                fixed_amount,
+                                percentage
+                            )
+                            subscribed_channels.append(channel.name)
+                            logger.info(f"Successfully subscribed user {interaction.user.id} to channel #{channel.name}")
+                        else:
+                            logger.warning(f"Bot doesn't have read permissions for channel #{channel.name}")
+                            failed_channels.append(channel_id)
+                    else:
+                        logger.warning(f"Channel {channel_id} not found or not a text channel")
+                        failed_channels.append(channel_id)
+                except Exception as e:
+                    logger.error(f"Error subscribing to channel {channel_id}: {e}")
+                    failed_channels.append(channel_id)
+            
+            # Build detailed success message
+            success_text = f"✅ **Multi-Channel Subscription Results**\n\n"
+            
+            if subscribed_channels:
+                success_text += f"✅ **Successfully Subscribed** ({len(subscribed_channels)}):\n"
+                for channel_name in subscribed_channels:
+                    success_text += f"• #{channel_name} ✅\n"
+                success_text += f"\n"
+            
+            if failed_channels:
+                success_text += f"❌ **Failed Subscriptions** ({len(failed_channels)}):\n"
+                for channel_id in failed_channels:
+                    try:
+                        channel = self.guild.get_channel(int(channel_id))
+                        channel_name = channel.name if channel else f"Channel-{channel_id}"
+                        success_text += f"• #{channel_name} ❌\n"
+                    except:
+                        success_text += f"• Unknown Channel ❌\n"
+                success_text += f"\n"
+            
+            success_text += f"⚙️ **Settings Applied**:\n"
+            success_text += f"🏦 Exchange: **{self.exchange.value.capitalize()}**\n"
+            success_text += f"� Mode: **{mode.upper()}**\n"
+            success_text += f"{'💵 Fixed Amount' if mode == 'fixed' else '📈 Percentage'}: **{'$' if mode == 'fixed' else ''}{amount_val:.2f}{'%' if mode == 'percentage' else ''}**\n"
+            success_text += f"⚠️ Max Risk: **{max_risk_val}%**\n\n"
+            
+            if subscribed_channels:
+                success_text += f"🚀 **Ready!** Trading signals in {len(subscribed_channels)} channels will trigger automatic trades!"
+            
+            if failed_channels and not subscribed_channels:
+                success_text += f"⚠️ **No channels were successfully subscribed.** Please try again or check permissions."
+            
+            await interaction.response.send_message(success_text, ephemeral=True)
+            
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter valid numbers for position size and max risk.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Multi-channel subscribe error: {e}")
+            await interaction.response.send_message("❌ Error subscribing to channels. Please try again.", ephemeral=True)
+
+class CleanUICommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+    
+    @app_commands.command(name="dashboard", description="Open the trading bot dashboard")
+    async def dashboard(self, interaction: discord.Interaction):
+        try:
+            logger.info(f"Dashboard command called by {interaction.user.name}")
+            
+            # Add user to database
+            user_id = str(interaction.user.id)
+            self.bot.db.add_user(user_id, interaction.user.name)
+            
+            # Check if user is banned
+            if self.bot.db.is_user_banned(user_id):
+                banned_embed = discord.Embed(
+                    title="🚫 ACCESS DENIED",
+                    description="❌ **Your account has been banned**\n\nYou cannot use this bot. If you believe this is a mistake, please contact the administrator.",
+                    color=0xff0000
+                )
+                banned_embed.add_field(
+                    name="📧 Appeals",
+                    value="Contact server staff for ban appeals.",
+                    inline=False
+                )
+                await interaction.response.send_message(embed=banned_embed, ephemeral=True)
+                return
+            
+            # Create modern, beautiful welcome embed
+            embed = discord.Embed(
+                title="",
+                description="",
+                color=0x5865F2  # Discord Blurple
+            )
+            
+            # Add welcome header with user mention
+            welcome_text = (
+                "🤖 **Auto Trade Bot**\n"
+                f"Welcome back, {interaction.user.mention}!\n\n"
+                "Your intelligent trading companion for automated signal execution"
+            )
+            
+            embed.add_field(
+                name="",
+                value=welcome_text,
+                inline=False
+            )
+            
+            # Add feature overview with modern styling
+            features = (
+                "```\n"
+                "⚙️  Setup & Configuration\n"
+                "    Manage API keys and subscriptions\n\n"
+                "💰 Trading Dashboard\n"
+                "    Balance, positions & signal testing\n\n"
+                "📊 Analytics & Reports\n"
+                "    Performance tracking and insights\n\n"
+                "🔍 Real-time Monitoring\n"
+                "    Live price tracking and alerts\n"
+                "```"
+            )
+            
+            embed.add_field(
+                name="🎯 Available Features",
+                value=features,
+                inline=False
+            )
+            
+            # Add exchange support
+            exchanges = (
+                "▸ **Hyperliquid** (Active & Tested)\n"
+                "▸ More exchanges coming soon..."
+            )
+            
+            embed.add_field(
+                name="🏦 Supported Exchanges",
+                value=exchanges,
+                inline=False
+            )
+            
+            # Add quick start guide
+            quick_start = (
+                "1️⃣ Click **Setup** to add your API key\n"
+                "2️⃣ Subscribe to signal channels\n"
+                "3️⃣ Automated trading begins!\n"
+                "4️⃣ Monitor trades in real-time"
+            )
+            
+            embed.add_field(
+                name="� Quick Start Guide",
+                value=quick_start,
+                inline=False
+            )
+            
+            # Add status indicators
+            status_info = (
+                "```\n"
+                "🟢 Bot Online\n"
+                "🟢 WebSocket Connected\n"
+                "🟢 Database Active\n"
+                "```"
+            )
+            
+            embed.add_field(
+                name="📡 System Status",
+                value=status_info,
+                inline=False
+            )
+            
+            # Set footer with user info
+            embed.set_footer(
+                text=f"Auto Trade Bot v2.0 • User: {interaction.user.name} • #{interaction.channel.name}",
+                icon_url=interaction.user.display_avatar.url
+            )
+            
+            # Add timestamp
+            from datetime import datetime
+            embed.timestamp = datetime.now()
+            
+            # Create the button view
+            view = DashboardView(self.bot)
+            
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            logger.info(f"Modern dashboard sent successfully to {interaction.user.name}")
+            
+        except Exception as e:
+            logger.error(f"Dashboard error: {e}")
+            # Fallback to simple message
+            message_text = "❌ Dashboard UI error. Use `/ping` to test or other commands directly."
+            is_ephemeral = interaction.guild is not None
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(message_text, ephemeral=is_ephemeral)
+                else:
+                    await interaction.response.send_message(message_text, ephemeral=is_ephemeral)
+            except Exception as followup_error:
+                logger.error(f"Fallback dashboard message failed: {followup_error}")
+    
+    @app_commands.command(name="ping", description="Simple ping test")
+    async def ping(self, interaction: discord.Interaction):
+        """Ultra simple ping command"""
+        try:
+            await interaction.response.send_message("🏓 Pong! Bot is working!", ephemeral=True)
+        except Exception as send_error:
+            logger.warning(f"Ping response failed (defaulted to non-ephemeral): {send_error}")
+            if interaction.response.is_done():
+                await interaction.followup.send("🏓 Pong! Bot is working!", ephemeral=False)
+            else:
+                await interaction.response.send_message("🏓 Pong! Bot is working!", ephemeral=False)
+        logger.info(f"Ping command by {interaction.user.name}")
+    
+    @app_commands.command(name="test", description="Test bot response privately")
+    async def test(self, interaction: discord.Interaction):
+        """Simple test command that shows public response"""
+        try:
+            # Simple text response first
+            await interaction.response.send_message(
+                "🧪 **BOT TEST SUCCESSFUL!** ✅\n\n"
+                f"Hello {interaction.user.name}! The bot is working perfectly.\n"
+                f"Channel: {interaction.channel.name}\n"
+                "This response is visible only to you.",
+                ephemeral=True
+            )
+            logger.info(f"Test command executed successfully by {interaction.user.name}")
+        except Exception as e:
+            logger.error(f"Test command error: {e}")
+            try:
+                await interaction.response.send_message("Bot test failed", ephemeral=True)
+            except Exception as send_error:
+                logger.error(f"Secondary test response failed: {send_error}")
+                if interaction.response.is_done():
+                    await interaction.followup.send("Bot test failed", ephemeral=False)
+                else:
+                    await interaction.response.send_message("Bot test failed", ephemeral=False)
+    
+    @app_commands.command(name="status", description="Check bot status")
+    async def status(self, interaction: discord.Interaction):
+        try:
+            embed = discord.Embed(
+                title="🤖 Bot Status",
+                color=0x00ff00
+            )
+            embed.add_field(name="Status", value="✅ Online", inline=True)
+            embed.add_field(name="Latency", value=f"{round(self.bot.latency * 1000)}ms", inline=True)
+            embed.add_field(name="Guilds", value=str(len(self.bot.guilds)), inline=True)
+            
+            try:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            except Exception as send_error:
+                logger.warning(f"Status response fallback triggered: {send_error}")
+                send_method = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+                await send_method(embed=embed, ephemeral=interaction.guild is not None)
+            
+        except Exception as e:
+            logger.error(f"Status error: {e}")
+            try:
+                await interaction.response.send_message("✅ Bot is running!", ephemeral=True)
+            except Exception as send_error:
+                logger.error(f"Status fallback failed: {send_error}")
+                if interaction.response.is_done():
+                    await interaction.followup.send("✅ Bot is running!", ephemeral=interaction.guild is not None)
+                else:
+                    await interaction.response.send_message("✅ Bot is running!", ephemeral=interaction.guild is not None)
+    
+    @app_commands.command(name="quick_balance", description="Quick balance check")
+    @app_commands.describe(exchange="Exchange to check (default: hyperliquid)")
+    async def quick_balance(self, interaction: discord.Interaction, exchange: str = "hyperliquid"):
+        try:
+            # Check if user is banned
+            user_id = str(interaction.user.id)
+            self.bot.db.add_user(user_id, interaction.user.name)
+            
+            if self.bot.db.is_user_banned(user_id):
+                banned_embed = discord.Embed(
+                    title="🚫 ACCESS DENIED",
+                    description="❌ **Your account has been banned**\n\nYou cannot use this bot. If you believe this is a mistake, please contact the administrator.",
+                    color=0xff0000
+                )
+                banned_embed.add_field(
+                    name="📧 Appeals",
+                    value="Contact server staff for ban appeals.",
+                    inline=False
+                )
+                await interaction.response.send_message(embed=banned_embed, ephemeral=True)
+                return
+        
+            await interaction.response.defer(ephemeral=True)
+            
+            logger.info(f"Quick balance called by {interaction.user.name} for {exchange}")
+            
+            # Get user API key
+            api_key_data = self.bot.db.get_user_api_key(str(interaction.user.id), exchange.lower())
+            if not api_key_data:
+                embed = discord.Embed(
+                    title="❌ No API Key Found",
+                    description=f"Please add your {exchange} API key first using:\n`/add_api_key`",
+                    color=0xff0000
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # Get balance
+            connector = self.bot.connectors.get(exchange.lower())
+            if not connector:
+                embed = discord.Embed(
+                    title="❌ Exchange Not Supported",
+                    description=f"{exchange} is not supported yet.",
+                    color=0xff0000
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            balance = await connector.get_balance(api_key_data)
+            
+            embed = discord.Embed(
+                title=f"💰 {exchange.capitalize()} Balance",
+                color=0x00ff00
+            )
+            embed.add_field(name="💵 Total", value=f"${balance.get('total', 0):.2f}", inline=True)
+            embed.add_field(name="💸 Available", value=f"${balance.get('available', 0):.2f}", inline=True)
+            embed.add_field(name="🏦 Account", value=f"{'🧪 Testnet' if api_key_data.get('testnet') else '🔴 Live'}", inline=True)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f"Balance sent successfully to {interaction.user.name}")
+            
+        except Exception as e:
+            logger.error(f"Quick balance error: {e}")
+            embed = discord.Embed(
+                title="❌ Error",
+                description="Failed to retrieve balance. Please check your API key.",
+                color=0xff0000
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+class MonitoringView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="🔄 Refresh Status", style=discord.ButtonStyle.primary)
+    async def refresh_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        monitoring_embed = await self.bot.trade_monitor.create_monitoring_embed()
+        await interaction.response.edit_message(embed=monitoring_embed, view=self)
+    
+    @discord.ui.button(label="📊 My Active Trades", style=discord.ButtonStyle.success)
+    async def my_trades(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            active_trades = await self.bot.trade_monitor.get_user_active_trades(interaction.user.id)
+            
+            if not active_trades:
+                message_text = f"""📊 **YOUR ACTIVE TRADES**
+
+Monitoring {len(active_trades)} active positions
+
+📭 **No Active Trades**
+You don't have any trades currently being monitored.
+Execute some signals to see them here!
+
+🔄 Real-time monitoring with automatic alerts"""
+            else:
+                message_text = f"""📊 **YOUR ACTIVE TRADES**
+
+Monitoring {len(active_trades)} active positions
+
+"""
+                for i, trade in enumerate(active_trades[:10]):  # Limit to 10 trades
+                    side_emoji = "🟢" if trade['side'] == 'buy' else "🔴"
+                    
+                    message_text += f"**Trade #{i+1}**\n"
+                    message_text += f"{side_emoji} **{trade['symbol']}** ({trade['side'].upper()})\n"
+                    
+                    # Safely get entry price
+                    entry_price = trade.get('entry_price')
+                    if entry_price is None:
+                        # Fallback to first entry if entry_price not available
+                        entries = trade.get('entry', [])
+                        if entries:
+                            if isinstance(entries, list):
+                                if len(entries) > 0:
+                                    entry_price = entries[0]
+                            else:
+                                # entries is a single value (float)
+                                entry_price = entries
+                    
+                    if entry_price:
+                        message_text += f"Entry: ${float(entry_price):.4f}\n"
+                    
+                    # Safely handle stop_loss (could be list or single value)
+                    stop_loss = trade.get('stop_loss')
+                    if stop_loss:
+                        if isinstance(stop_loss, list):
+                            sl_str = ', '.join([f"${float(sl):.4f}" for sl in stop_loss])
+                        else:
+                            sl_str = f"${float(stop_loss):.4f}"
+                        message_text += f"SL: {sl_str}\n"
+                    
+                    # Safely handle take_profit (could be list or single value)
+                    take_profit = trade.get('take_profit')
+                    if take_profit:
+                        if isinstance(take_profit, list):
+                            tp_str = ', '.join([f"${float(tp):.4f}" for tp in take_profit])
+                        else:
+                            tp_str = f"${float(take_profit):.4f}"
+                        message_text += f"TP: {tp_str}\n"
+                    message_text += "\n"
+                
+                if len(active_trades) > 10:
+                    message_text += f"📋 **More Trades**\n... and {len(active_trades) - 10} more trades\n\n"
+                
+                message_text += "🔄 Real-time monitoring with automatic alerts"
+            
+            await interaction.response.edit_message(content=message_text, embed=None, view=self)
+            
+        except Exception as e:
+            logger.error(f"Error getting user active trades: {e}")
+            error_text = """❌ **ERROR**
+
+Failed to retrieve your active trades.
+Please try again or contact support."""
+            await interaction.response.edit_message(content=error_text, embed=None, view=self)
+    
+    @discord.ui.button(label="⏹️ Service Control", style=discord.ButtonStyle.secondary)
+    async def service_control(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Only show service control to administrators
+        if not interaction.user.guild_permissions.administrator:
+            embed = discord.Embed(
+                title="❌ Access Denied",
+                description="Only server administrators can control the monitoring service.",
+                color=0xff4757
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        status = await self.bot.trade_monitor.get_monitoring_status()
+        
+        embed = discord.Embed(
+            title="⚙️ Service Control Panel",
+            description="Monitoring service administration",
+            color=0x0099ff
+        )
+        
+        service_status = "🟢 Running" if status['service_running'] else "🔴 Stopped"
+        embed.add_field(name="Current Status", value=service_status, inline=True)
+        embed.add_field(name="Active Trades", value=str(status['active_trades']), inline=True)
+        
+        view = ServiceControlView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+    
+    @discord.ui.button(label="🔙 Back to Dashboard", style=discord.ButtonStyle.secondary)
+    async def back_to_dashboard(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🤖 Discord Trading Bot Dashboard",
+            description="**Professional automated trading with real-time monitoring**\n\nWelcome to your trading command center! Configure settings, monitor trades, and analyze performance.",
+            color=0x0099ff
+        )
+        embed.add_field(
+            name="🚀 Quick Start",
+            value="• Add API keys in Setup\n• Subscribe to signal channels\n• Monitor live trades\n• Track performance",
+            inline=False
+        )
+        embed.add_field(
+            name="📊 Real-time Features",
+            value="• Instant signal processing\n• Live price monitoring\n• Automatic TP/SL alerts\n• Multi-channel support",
+            inline=False
+        )
+        embed.set_footer(text="🔥 Built for professional traders | Real-time monitoring active")
+        
+        view = DashboardView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class ServiceControlView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="🔄 Restart Service", style=discord.ButtonStyle.primary)
+    async def restart_service(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            await interaction.response.defer()
+            
+            # Stop and restart the service
+            await self.bot.trade_monitor.stop()
+            await self.bot.trade_monitor.start()
+            
+            embed = discord.Embed(
+                title="✅ Service Restarted",
+                description="Trade monitoring service has been successfully restarted.",
+                color=0x2ed573
+            )
+            
+            # Get fresh status
+            status = await self.bot.trade_monitor.get_monitoring_status()
+            embed.add_field(name="Status", value="🟢 Running", inline=True)
+            embed.add_field(name="Active Trades", value=str(status['active_trades']), inline=True)
+            
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+            
+        except Exception as e:
+            logger.error(f"Error restarting monitoring service: {e}")
+            embed = discord.Embed(
+                title="❌ Restart Failed",
+                description=f"Failed to restart monitoring service: {str(e)}",
+                color=0xff4757
+            )
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+    
+    @discord.ui.button(label="🔙 Back to Monitoring", style=discord.ButtonStyle.secondary)
+    async def back_to_monitoring(self, interaction: discord.Interaction, button: discord.ui.Button):
+        monitoring_embed = await self.bot.trade_monitor.create_monitoring_embed()
+        view = MonitoringView(self.bot)
+        await interaction.response.edit_message(embed=monitoring_embed, view=view)
+
+
+class BackToDashboardView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=300)
+        self.bot = bot
+    
+    @discord.ui.button(label="🔙 Back to Dashboard", style=discord.ButtonStyle.secondary, emoji="🔙")
+    async def back_to_dashboard(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Return to main dashboard
+        embed = discord.Embed(
+            title="🤖 Trading Bot Dashboard",
+            description="Welcome to your personal trading dashboard! Choose an option below:",
+            color=0x0099ff
+        )
+        embed.add_field(
+            name="⚙️ Setup",
+            value="Configure API keys and bot settings",
+            inline=True
+        )
+        embed.add_field(
+            name="💰 Trading",
+            value="Access trading tools and execute trades",
+            inline=True
+        )
+        embed.add_field(
+            name="📊 Analytics",
+            value="View performance and trade history",
+            inline=True
+        )
+        embed.add_field(
+            name="🔍 Monitor",
+            value="Real-time trade monitoring",
+            inline=True
+        )
+        embed.add_field(
+            name="❓ Help",
+            value="Get help and information",
+            inline=True
+        )
+        embed.set_footer(text="🚀 Click any button to get started")
+        
+        view = DashboardView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class PermanentDashboardView(discord.ui.View):
+    """Persistent dashboard view that doesn't timeout"""
+    
+    def __init__(self, bot):
+        super().__init__(timeout=None)  # No timeout for persistent view
+        self.bot = bot
+    
+    @discord.ui.button(label="⚙️ Setup", style=discord.ButtonStyle.primary, emoji="⚙️", custom_id="persistent_setup")
+    async def setup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user is banned
+        user_id = str(interaction.user.id)
+        self.bot.db.add_user(user_id, interaction.user.name)
+        
+        if self.bot.db.is_user_banned(user_id):
+            banned_message = (
+                f"🚫 **ACCESS DENIED**\n\n"
+                f"❌ **Your account has been banned**\n\n" 
+                f"You cannot use this bot. If you believe this is a mistake, please contact the administrator.\n\n"
+                f"📧 **For appeals, contact server staff.**"
+            )
+            await interaction.response.send_message(banned_message, ephemeral=True)
+            return
+        
+        setup_text = """⚙️ **SETUP MENU**
+
+Configure your trading bot:
+
+🔑 **Add API Key**
+Click below to add your exchange API credentials securely
+
+📢 **Subscribe to Channels** 
+Subscribe to multiple channels for automatic signal trading
+
+📋 **View Subscriptions**
+See which channels you're currently subscribed to
+
+🚀 **Quick Actions:**
+• Use `/add_api_key` to add your exchange credentials
+• Use `/quick_subscribe` to subscribe to this channel
+• Use `/dashboard` for full interactive dashboard"""
+        
+        view = SetupView(self.bot)
+        await interaction.response.send_message(setup_text, view=view, ephemeral=True)
+    
+    @discord.ui.button(label="💰 Trading", style=discord.ButtonStyle.success, emoji="💰", custom_id="persistent_trading")
+    async def trading_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user is banned
+        user_id = str(interaction.user.id)
+        self.bot.db.add_user(user_id, interaction.user.name)
+        
+        if self.bot.db.is_user_banned(user_id):
+            banned_message = (
+                f"🚫 **ACCESS DENIED**\n\n" 
+                f"❌ **Your account has been banned**\n\n"
+                f"You cannot use this bot. If you believe this is a mistake, please contact the administrator.\n\n"
+                f"📧 **For appeals, contact server staff.**"
+            )
+            await interaction.response.send_message(banned_message, ephemeral=True)
+            return
+        
+        trading_text = """💰 **TRADING MENU**
+
+Trading tools and information:
+
+💵 **Check Balance**
+View your exchange account balance
+
+📈 **Live Trading**
+Execute real trades on connected exchanges
+
+🚀 **Quick Actions:**
+• Use `/quick_balance` to check your balance
+• Post signals in subscribed channels for auto-trading"""
+        
+        view = TradingView(self.bot)
+        await interaction.response.send_message(trading_text, view=view, ephemeral=True)
+    
+    @discord.ui.button(label="📊 Analytics", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="persistent_analytics")
+    async def analytics_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user is banned
+        user_id = str(interaction.user.id)
+        self.bot.db.add_user(user_id, interaction.user.name)
+        
+        if self.bot.db.is_user_banned(user_id):
+            banned_message = (
+                f"🚫 **ACCESS DENIED**\n\n"
+                f"❌ **Your account has been banned**\n\n"
+                f"You cannot use this bot. If you believe this is a mistake, please contact the administrator.\n\n"
+                f"📧 **For appeals, contact server staff.**"
+            )
+            await interaction.response.send_message(banned_message, ephemeral=True)
+            return
+        
+        analytics_text = """📊 **ANALYTICS MENU**
+
+View your trading performance:
+
+📈 **Trade History**
+View your recent trades and execution logs
+
+📊 **Performance Stats**
+See your trading statistics and metrics
+
+💹 **Profit/Loss Tracking**
+Track your overall trading performance
+
+🚀 **Quick Actions:**
+• Use `/dashboard` then Analytics for detailed stats
+• Check trade history and performance metrics
+• Monitor your trading success rate"""
+        
+        view = AnalyticsView(self.bot)
+        await interaction.response.send_message(analytics_text, view=view, ephemeral=True)
+    
+    @discord.ui.button(label="🔍 Monitor", style=discord.ButtonStyle.secondary, emoji="🔍", custom_id="persistent_monitor")
+    async def monitor_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user is banned
+        user_id = str(interaction.user.id)
+        self.bot.db.add_user(user_id, interaction.user.name)
+        
+        if self.bot.db.is_user_banned(user_id):
+            banned_message = (
+                f"🚫 **ACCESS DENIED**\n\n"
+                f"❌ **Your account has been banned**\n\n"
+                f"You cannot use this bot. If you believe this is a mistake, please contact the administrator.\n\n"
+                f"📧 **For appeals, contact server staff.**"
+            )
+            await interaction.response.send_message(banned_message, ephemeral=True)
+            return
+        
+        # Get monitoring status from the trade monitor service
+        try:
+            status = await self.bot.trade_monitor.get_monitoring_status()
+            
+            monitoring_text = f"""🔍 **TRADE MONITORING STATUS**
+
+Real-time trade monitoring and alerts
+
+🔧 **Service Status**: {"🟢 Running" if status['service_running'] else "🔴 Stopped"}
+📡 **Price Feed**: {"🟢 Connected" if status.get('price_feed_connected', False) else "🔴 Disconnected"}
+📊 **Active Trades**: {status['active_trades']} monitored
+📈 **Tracked Symbols**: {status.get('subscribed_symbols', 0)} symbols
+🔄 **Update Frequency**: Every {status['update_interval']}s
+📋 **Total Monitored**: {status['total_monitored']} trades
+
+🎯 **Features:**
+• Real-time price tracking
+• Automatic TP/SL alerts
+• Profit/loss notifications
+• Multi-user monitoring
+
+🚀 **Quick Actions:**
+• Use `/dashboard` then Monitor for detailed view
+• Your active trades are automatically monitored
+• Alerts sent when targets are hit"""
+            
+        except Exception as e:
+            monitoring_text = f"""🔍 **TRADE MONITORING**
+
+Real-time trade monitoring system
+
+⚠️ **Status**: Error retrieving monitoring status
+📋 **Error**: {str(e)}
+
+🚀 **Quick Actions:**
+• Use `/dashboard` for detailed monitoring panel
+• Contact admin if issues persist"""
+        
+        view = MonitoringView(self.bot)
+        await interaction.response.send_message(monitoring_text, view=view, ephemeral=True)
+    
+    @discord.ui.button(label="❓ Help", style=discord.ButtonStyle.secondary, emoji="❓", custom_id="persistent_help")
+    async def help_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        help_text = """❓ **HELP & INFORMATION**
+
+**Discord Trading Bot Guide**
+
+This bot automatically executes trades based on signals posted in Discord channels.
+
+🚀 **Quick Start**
+1. Add API keys using Setup menu
+2. Subscribe to signal channels
+3. Post signals and watch them execute!
+
+📋 **Signal Format**
+```
+LONG BTCUSDT
+ENTRY: 45000-46000
+SL: 44000
+TP: 48000, 50000
+LEVERAGE: 10x
+```
+
+🏦 **Supported Exchanges**
+• Hyperliquid (Primary)
+• More exchanges coming soon...
+
+🆘 **Need Help?**
+• Use `/dashboard` for full interactive interface
+• Contact server administrators for support
+• Check documentation for advanced features"""
+        
+        view = BackButton(self.bot)
+        await interaction.response.send_message(help_text, view=view, ephemeral=True)
+

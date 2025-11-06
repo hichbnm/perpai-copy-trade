@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Channels - Trading Bot Dashboard{% endblock %}
+{% block page_title %}📡 Signal Channels{% endblock %}
+{% block page_subtitle %}Monitor all signal channels and their subscribers{% endblock %}
+
+{% block header_actions %}
+<div class="filter-group">
+    <select id="filter-type" class="filter-select">
+        <option value="all">All Channels</option>
+        <option value="signal">Signal Channels Only</option>
+        <option value="inactive">Inactive Channels</option>
+    </select>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Toast Notification Container -->
+<div id="toast-container"></div>
+
+<section>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Channel Name</th>
+                    <th>Channel ID</th>
+                    <th>Subscribers</th>
+                    <th>Signal Channel</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="channels-tbody">
+                <tr><td colspan="6" class="loading" style="text-align:center;">Loading channels...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Channel Details Modal -->
+<div id="channelModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>📡 Channel Details</h2>
+            <span class="close" onclick="closeModal('channelModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <div id="channelDetails">
+                <div class="detail-group">
+                    <label>Channel Name:</label>
+                    <span id="detail-channel-name">-</span>
+                </div>
+                <div class="detail-group">
+                    <label>Channel ID:</label>
+                    <code id="detail-channel-id">-</code>
+                </div>
+                <div class="detail-group">
+                    <label>Signal Channel:</label>
+                    <span id="detail-is-signal">-</span>
+                </div>
+                <div class="detail-group">
+                    <label>Total Subscribers:</label>
+                    <span id="detail-subscribers">-</span>
+                </div>
+                <div class="detail-group">
+                    <label>Created:</label>
+                    <span id="detail-created">-</span>
+                </div>
+            </div>
+            
+            <h3 style="margin-top: 2rem;">👥 Subscribers</h3>
+            <div style="margin-bottom: 1rem;">
+                <button class="btn-danger" onclick="banAllSubscribers()" style="margin-right: 0.5rem;">
+                    🚫 Ban All Subscribers
+                </button>
+                <button class="btn-primary" onclick="unbanAllSubscribers()">
+                    ✅ Unban All Subscribers
+                </button>
+            </div>
+            <div id="subscribersList">
+                <p style="color: var(--text-secondary);">Loading subscribers...</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('channelModal')">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Channel Modal -->
+<div id="editChannelModal" class="modal">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>✏️ Edit Channel</h2>
+            <span class="close" onclick="closeModal('editChannelModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="editChannelForm">
+                <input type="hidden" id="edit-channel-id">
+                
+                <div class="form-group">
+                    <label>Channel Name</label>
+                    <input type="text" id="edit-channel-name" placeholder="Enter channel name">
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="edit-is-signal">
+                        Signal Channel
+                    </label>
+                    <small>Enable to allow trading signals from this channel</small>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('editChannelModal')">Cancel</button>
+            <button class="btn-primary" onclick="saveChannel()">💾 Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="modal">
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>⚠️ Confirm Delete</h2>
+            <span class="close" onclick="closeModal('deleteModal')">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete this channel?</p>
+            <p style="color: var(--danger); font-weight: 600;" id="delete-confirm-text"></p>
+            <p style="color: var(--text-secondary); font-size: 0.9rem;">This will also remove all subscriptions to this channel.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn-danger" onclick="confirmDelete()">🗑️ Delete</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/channels.js"></script>
+{% endblock %}
