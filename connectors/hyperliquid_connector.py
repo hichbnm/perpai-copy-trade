@@ -1717,3 +1717,126 @@ class HyperliquidConnector(BaseConnector):
         
         if 'sl_order_id' in order_data:
             self.active_orders[user_id][symbol]['sl_orders'].append(order_data['sl_order_id'])
+    
+    async def update_stop_loss_to_breakeven(self, symbol: str, entry_price: float, side: str,
+                                           api_key: str, api_secret: str, testnet: bool = False) -> Dict[str, Any]:
+        """
+        Update stop loss to breakeven (entry price) after TP1 hits.
+        Cancels existing SL orders and places new one at entry price.
+        """
+        try:
+            user_id = api_key[:8]  # Use first 8 chars of API key as identifier
+            
+            # Validate symbol
+            symbol_validation = await self.validate_symbol(symbol, testnet)
+            if not symbol_validation['valid']:
+                return {"success": False, "error": f"Invalid symbol: {symbol}"}
+            
+            clean_symbol = symbol_validation['symbol']
+            
+            # Get existing SL orders for this position
+            sl_orders = self.active_orders.get(user_id, {}).get(clean_symbol, {}).get('sl_orders', [])
+            
+            if not sl_orders:
+                logger.warning(f"⚠️ No existing SL orders found for {clean_symbol}, creating new one")
+            else:
+                # Cancel existing SL orders
+                logger.info(f"🗑️ Cancelling {len(sl_orders)} existing SL orders for {clean_symbol}")
+                user_data = {'api_key': api_key, 'api_secret': api_secret, 'testnet': testnet}
+                
+                cancelled_count = 0
+                for sl_order_id in sl_orders:
+                    try:
+                        success = await self._cancel_single_order(clean_symbol, sl_order_id, user_data)
+                        if success:
+                            cancelled_count += 1
+                            logger.info(f"✅ Cancelled SL order {sl_order_id}")
+                    except Exception as cancel_error:
+                        logger.error(f"❌ Failed to cancel SL order {sl_order_id}: {cancel_error}")
+                
+                # Clear SL orders list
+                if user_id in self.active_orders and clean_symbol in self.active_orders[user_id]:
+                    self.active_orders[user_id][clean_symbol]['sl_orders'] = []
+                
+                logger.info(f"📊 Cancelled {cancelled_count}/{len(sl_orders)} SL orders")
+            
+            # Get position size from exchange to place correct SL size
+            position_size = await self._get_position_size(api_key, api_secret, clean_symbol, testnet)
+            if position_size == 0:
+                return {"success": False, "error": "No open position found"}
+            
+            # Snap entry price to tick size
+            px_decimals = symbol_validation.get('px_decimals', 4)
+            entry_price_snapped = self._snap_to_tick(entry_price, clean_symbol, px_decimals, side == 'sell')
+            
+            logger.info(f"🛡️ Placing new SL at breakeven: ${entry_price_snapped:.{px_decimals}f} for {abs(position_size):.6f} {clean_symbol}")
+            
+            # Place new SL order at breakeven
+            order_data = {
+                "coin": clean_symbol,
+                "is_buy": side == 'sell',  # Opposite of entry
+                "sz": abs(position_size),
+                "limit_px": entry_price_snapped,
+                "order_type": {"trigger": {"triggerPx": entry_price_snapped, "isMarket": True, "tpsl": "sl"}},
+                "reduce_only": True
+            }
+            
+            user_data = {'api_key': api_key, 'api_secret': api_secret, 'testnet': testnet}
+            result = await self._place_order(user_data, order_data)
+            
+            if result.get('success'):
+                # Track the new SL order
+                if 'order_id' in result:
+                    self._track_orders(user_id, clean_symbol, {'sl_order_id': result['order_id']})
+                
+                logger.info(f"✅ Breakeven SL placed at ${entry_price_snapped:.{px_decimals}f}")
+                return {
+                    "success": True,
+                    "price": entry_price_snapped,
+                    "order_id": result.get('order_id'),
+                    "cancelled_orders": len(sl_orders)
+                }
+            else:
+                logger.error(f"❌ Failed to place breakeven SL: {result.get('error')}")
+                return result
+                
+        except Exception as e:
+            logger.error(f"❌ Error updating SL to breakeven: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+    
+    async def _get_position_size(self, api_key: str, api_secret: str, symbol: str, testnet: bool = False) -> float:
+        """Get current position size from exchange"""
+        try:
+            url = f"{self._get_base_url(testnet)}/info"
+            
+            wallet_address = self._normalize_wallet_address(api_key)
+            if not wallet_address:
+                logger.error("Invalid wallet address for position check")
+                return 0.0
+            
+            payload = {
+                "type": "clearinghouseState",
+                "user": wallet_address
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        positions = data.get('assetPositions', [])
+                        
+                        for position in positions:
+                            pos_symbol = position.get('position', {}).get('coin', '')
+                            if pos_symbol == symbol:
+                                szi = position.get('position', {}).get('szi', '0')
+                                return float(szi)
+                        
+                        logger.warning(f"⚠️ No position found for {symbol}")
+                        return 0.0
+                    else:
+                        logger.error(f"❌ Failed to get position: HTTP {response.status}")
+                        return 0.0
+                        
+        except Exception as e:
+            logger.error(f"❌ Error getting position size: {e}")
+            return 0.0

@@ -439,10 +439,20 @@ class APIBasedPositionMonitor:
                 targets_hit['tp'].append(i)
                 await self._notify_target_hit(signal, 'take_profit', tp_price, current_price, entry_price, i + 1)
                 
+                # Move stop loss to breakeven after TP1 hits
+                if i == 0 and not targets_hit.get('sl_moved_to_breakeven', False):
+                    await self._move_stop_loss_to_breakeven(signal, entry_price)
+                    targets_hit['sl_moved_to_breakeven'] = True
+                
             elif side == 'sell' and current_price <= tp_price:
                 logger.info(f"🎯 TP{i+1} HIT! {signal['symbol']} SHORT: current ${current_price:.2f} <= TP ${tp_price:.2f}")
                 targets_hit['tp'].append(i)
                 await self._notify_target_hit(signal, 'take_profit', tp_price, current_price, entry_price, i + 1)
+                
+                # Move stop loss to breakeven after TP1 hits
+                if i == 0 and not targets_hit.get('sl_moved_to_breakeven', False):
+                    await self._move_stop_loss_to_breakeven(signal, entry_price)
+                    targets_hit['sl_moved_to_breakeven'] = True
         
         # Check if all targets hit
         if len(targets_hit['tp']) == len(take_profits) or signal_completed:
@@ -480,8 +490,86 @@ class APIBasedPositionMonitor:
             await channel.send(notification)
             logger.info(f"✅ Position opened notification sent successfully for {signal['symbol']}")
             
+            # Send private DM notifications to each user
+            await self._send_position_opened_dms(signal, position)
+            
         except Exception as e:
             logger.error(f"❌ Error sending position opened notification: {e}", exc_info=True)
+    
+    async def _send_position_opened_dms(self, signal: Dict, position: Dict):
+        """Send personalized DM to each user when position opens"""
+        try:
+            symbol = signal['symbol']
+            side = signal['side']
+            entry_price = position['entry_price']
+            user_mappings = signal.get('user_mappings', [])
+            
+            if not user_mappings:
+                return
+            
+            logger.info(f"📬 Sending position opened DMs to {len(user_mappings)} users for {symbol}")
+            
+            success_count = 0
+            failed_count = 0
+            
+            for user_map in user_mappings:
+                try:
+                    user_id = user_map.get('user_id')
+                    if not user_id:
+                        continue
+                    
+                    user_size = user_map.get('size', 0)
+                    
+                    # Fetch Discord user
+                    discord_user = self.bot.get_user(int(user_id))
+                    if not discord_user:
+                        try:
+                            discord_user = await self.bot.fetch_user(int(user_id))
+                        except Exception:
+                            failed_count += 1
+                            continue
+                    
+                    user_position_value = entry_price * user_size
+                    side_emoji = "🟢" if side == 'buy' else "🔴"
+                    
+                    # Get TP/SL info
+                    take_profits = signal.get('take_profit', [])
+                    stop_losses = signal.get('stop_loss', [])
+                    
+                    tp_text = ', '.join([f"${tp:.2f}" for tp in take_profits]) if take_profits else 'None'
+                    sl_text = f"${stop_losses[0]:.2f}" if stop_losses else 'None'
+                    
+                    dm_notification = (
+                        f"✅ **YOUR POSITION OPENED**\n\n"
+                        f"{side_emoji} **{symbol}** {side.upper()}\n"
+                        f"💰 Entry Price: **${entry_price:.2f}**\n"
+                        f"📊 Your Size: **{user_size:.6f}** (${user_position_value:.2f})\n"
+                        f"🎯 Take Profits: {tp_text}\n"
+                        f"🛑 Stop Loss: {sl_text}\n\n"
+                        f"📡 Bot is now monitoring your position...\n"
+                        f"💬 You'll receive DMs when TP/SL hits!"
+                    )
+                    
+                    try:
+                        await discord_user.send(dm_notification)
+                        success_count += 1
+                        logger.info(f"✅ Sent position opened DM to user {user_id}")
+                    except discord.Forbidden:
+                        logger.warning(f"⚠️ Cannot send DM to user {user_id} (DMs disabled)")
+                        failed_count += 1
+                    except Exception as dm_error:
+                        logger.error(f"❌ Failed to send DM to user {user_id}: {dm_error}")
+                        failed_count += 1
+                        
+                except Exception as user_error:
+                    logger.error(f"❌ Error processing position opened DM for user: {user_error}")
+                    failed_count += 1
+                    continue
+            
+            logger.info(f"📊 Position opened DMs: {success_count} success, {failed_count} failed")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in _send_position_opened_dms: {e}", exc_info=True)
     
     async def _notify_position_closed(self, signal: Dict):
         """Notify users that their position has been closed"""
@@ -604,8 +692,214 @@ class APIBasedPositionMonitor:
             await channel.send(notification)
             logger.info(f"✅ {target_type} notification sent successfully for {symbol}")
             
+            # Send private DM notifications to each user
+            await self._send_private_notifications(signal, target_type, target_price, current_price, entry_price, pnl_percent, tp_number)
+            
         except Exception as e:
             logger.error(f"❌ Error sending {target_type} notification: {e}", exc_info=True)
+    
+    async def _send_private_notifications(self, signal: Dict, target_type: str, target_price: float,
+                                          current_price: float, entry_price: float, pnl_percent: float, 
+                                          tp_number: int = None):
+        """Send personalized DM notifications to each user"""
+        try:
+            symbol = signal['symbol']
+            side = signal['side']
+            user_mappings = signal.get('user_mappings', [])
+            
+            if not user_mappings:
+                logger.warning(f"⚠️ No user mappings found for {symbol}, skipping private notifications")
+                return
+            
+            logger.info(f"📬 Sending private DM notifications to {len(user_mappings)} users for {symbol} {target_type}")
+            
+            success_count = 0
+            failed_count = 0
+            
+            for user_map in user_mappings:
+                try:
+                    user_id = user_map.get('user_id')
+                    if not user_id:
+                        continue
+                    
+                    # Get user's specific position details
+                    user_size = user_map.get('size', 0)
+                    
+                    # Fetch Discord user
+                    discord_user = self.bot.get_user(int(user_id))
+                    if not discord_user:
+                        try:
+                            discord_user = await self.bot.fetch_user(int(user_id))
+                        except Exception as fetch_error:
+                            logger.warning(f"⚠️ Cannot fetch user {user_id}: {fetch_error}")
+                            failed_count += 1
+                            continue
+                    
+                    # Calculate user's specific P&L
+                    if side == 'buy':
+                        price_diff = current_price - entry_price
+                    else:
+                        price_diff = entry_price - current_price
+                    
+                    user_pnl_usd = price_diff * user_size
+                    user_position_value = entry_price * user_size
+                    
+                    pnl_emoji = "🟢" if user_pnl_usd > 0 else "🔴"
+                    
+                    # Build personalized notification
+                    if target_type == 'stop_loss':
+                        dm_notification = (
+                            f"🛑 **YOUR STOP LOSS HIT**\n\n"
+                            f"📊 **{symbol}** {side.upper()}\n"
+                            f"💰 Your Entry: ${entry_price:.2f}\n"
+                            f"📊 Your Position: {user_size:.6f} (${user_position_value:.2f})\n"
+                            f"🎯 SL Target: ${target_price:.2f}\n"
+                            f"📍 Current Price: ${current_price:.2f}\n"
+                            f"{pnl_emoji} Your P&L: **${user_pnl_usd:+.2f}** ({pnl_percent:+.2f}%)\n\n"
+                            f"💡 Your position has been closed at stop loss."
+                        )
+                    else:
+                        # For multiple TPs, calculate partial position
+                        tp_total = len(signal.get('take_profit', []))
+                        if tp_total > 1:
+                            tp_portion = user_size / tp_total
+                            tp_pnl = price_diff * tp_portion
+                        else:
+                            tp_portion = user_size
+                            tp_pnl = user_pnl_usd
+                        
+                        dm_notification = (
+                            f"🎯 **YOUR TAKE PROFIT {tp_number} HIT**\n\n"
+                            f"📊 **{symbol}** {side.upper()}\n"
+                            f"💰 Your Entry: ${entry_price:.2f}\n"
+                            f"📊 Your Total Position: {user_size:.6f} (${user_position_value:.2f})\n"
+                            f"🎯 TP{tp_number}: ${target_price:.2f}\n"
+                            f"📍 Current Price: ${current_price:.2f}\n"
+                            f"💵 Profit on this TP: **+${tp_pnl:.2f}** (+{pnl_percent:.2f}%)\n"
+                        )
+                        
+                        if tp_total > 1:
+                            dm_notification += f"\n📌 Closed: {tp_portion:.6f} / {user_size:.6f} ({tp_number}/{tp_total} TPs hit)"
+                    
+                    # Send DM
+                    try:
+                        await discord_user.send(dm_notification)
+                        success_count += 1
+                        logger.info(f"✅ Sent private {target_type} notification to user {user_id}")
+                    except discord.Forbidden:
+                        logger.warning(f"⚠️ Cannot send DM to user {user_id} (DMs disabled)")
+                        failed_count += 1
+                    except Exception as dm_error:
+                        logger.error(f"❌ Failed to send DM to user {user_id}: {dm_error}")
+                        failed_count += 1
+                        
+                except Exception as user_error:
+                    logger.error(f"❌ Error processing notification for user: {user_error}")
+                    failed_count += 1
+                    continue
+            
+            logger.info(f"📊 Private notifications sent: {success_count} success, {failed_count} failed")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in _send_private_notifications: {e}", exc_info=True)
+    
+    async def _move_stop_loss_to_breakeven(self, signal: Dict, entry_price: float):
+        """Move stop loss to breakeven (entry price) after TP1 hits"""
+        try:
+            symbol = signal['symbol']
+            side = signal['side']
+            user_mappings = signal.get('user_mappings', [])
+            
+            logger.info(f"🔄 Moving stop loss to breakeven for {symbol} @ ${entry_price:.2f}")
+            
+            success_count = 0
+            failed_count = 0
+            
+            # Import connectors
+            from connectors.bybit_connector import BybitConnector
+            from connectors.hyperliquid_connector import HyperliquidConnector
+            
+            for user_map in user_mappings:
+                try:
+                    user_id = user_map.get('user_id')
+                    exchange = user_map.get('exchange', '').lower()
+                    api_key = user_map.get('api_key')
+                    api_secret = user_map.get('api_secret')
+                    testnet = user_map.get('testnet', False)
+                    
+                    if not api_key or not api_secret:
+                        logger.warning(f"⚠️ No API credentials for user {user_id}, skipping SL update")
+                        failed_count += 1
+                        continue
+                    
+                    # Update stop loss based on exchange
+                    if exchange == 'bybit':
+                        connector = BybitConnector()
+                        result = await connector._set_trading_stop(
+                            symbol=symbol,
+                            side='Buy' if side == 'buy' else 'Sell',
+                            stop_loss=entry_price,
+                            api_key=api_key,
+                            api_secret=api_secret,
+                            testnet=testnet
+                        )
+                        
+                        if result.get('success'):
+                            logger.info(f"✅ Bybit: Moved SL to breakeven for user {user_id}")
+                            success_count += 1
+                        else:
+                            logger.warning(f"⚠️ Bybit: Failed to move SL for user {user_id}: {result.get('error')}")
+                            failed_count += 1
+                            
+                    elif exchange == 'hyperliquid':
+                        # For Hyperliquid, use the new update method (cancel + replace)
+                        connector = HyperliquidConnector()
+                        result = await connector.update_stop_loss_to_breakeven(
+                            symbol=symbol,
+                            entry_price=entry_price,
+                            side=side,
+                            api_key=api_key,
+                            api_secret=api_secret,
+                            testnet=testnet
+                        )
+                        
+                        if result.get('success'):
+                            logger.info(f"✅ Hyperliquid: Moved SL to breakeven for user {user_id}")
+                            success_count += 1
+                        else:
+                            logger.warning(f"⚠️ Hyperliquid: Failed to move SL for user {user_id}: {result.get('error')}")
+                            failed_count += 1
+                    else:
+                        logger.warning(f"⚠️ Unknown exchange '{exchange}' for user {user_id}")
+                        failed_count += 1
+                        
+                except Exception as user_error:
+                    logger.error(f"❌ Error updating SL for user: {user_error}")
+                    failed_count += 1
+                    continue
+            
+            logger.info(f"📊 Breakeven SL updates: {success_count} success, {failed_count} failed")
+            
+            # Send notification to channel
+            channel_id = signal.get('channel_id')
+            if channel_id and success_count > 0:
+                try:
+                    channel = self.bot.get_channel(int(channel_id))
+                    if channel:
+                        notification = (
+                            f"🛡️ **STOP LOSS MOVED TO BREAKEVEN**\n\n"
+                            f"📊 **{symbol}** {side.upper()}\n"
+                            f"💰 New SL: **${entry_price:.2f}**\n"
+                            f"✅ After TP1 hit, protecting your profits!\n"
+                            f"👥 {success_count} users updated"
+                        )
+                        await channel.send(notification)
+                        logger.info(f"✅ Sent breakeven SL notification to channel")
+                except Exception as notify_error:
+                    logger.error(f"❌ Error sending breakeven notification: {notify_error}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in _move_stop_loss_to_breakeven: {e}", exc_info=True)
     
     def _normalize_target_levels(self, values) -> List[float]:
         """Normalize target levels to list of floats"""
