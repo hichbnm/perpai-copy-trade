@@ -620,13 +620,25 @@ class HyperliquidConnector(BaseConnector):
             # Calculate position size in coins (divide USD amount by entry price)
             position_size = leveraged_amount / entry_price
             
+            # Check minimum position size based on price
+            # Higher priced assets like BTC need higher minimum USD values
+            min_position_usd = 10.0  # Minimum $10 position value
+            actual_position_usd = position_size * entry_price
+            
+            if actual_position_usd < min_position_usd:
+                return {
+                    "success": False,
+                    "error": f"❌ Position too small: ${actual_position_usd:.2f} (minimum ${min_position_usd}). Increase your fixed amount or max risk %."
+                }
+            
             logger.info(
                 f"💰 Fixed amount position sizing:\n"
                 f"   Fixed Amount: ${fixed_amount:.2f}\n"
                 f"   Leverage: {leverage}x\n"
                 f"   Position Value: ${leveraged_amount:.2f}\n"
                 f"   Entry Price: ${entry_price:.2f}\n"
-                f"   Position Size: {position_size:.6f} coins"
+                f"   Position Size: {position_size:.6f} coins\n"
+                f"   Position USD Value: ${actual_position_usd:.2f}"
             )
             
             # Get entry prices
@@ -1761,7 +1773,7 @@ class HyperliquidConnector(BaseConnector):
                 logger.info(f"📊 Cancelled {cancelled_count}/{len(sl_orders)} SL orders")
             
             # Get position size from exchange to place correct SL size
-            position_size = await self._get_position_size(api_key, api_secret, clean_symbol, testnet)
+            position_size = await self._get_position_size_from_api(api_key, api_secret, clean_symbol, testnet)
             if position_size == 0:
                 return {"success": False, "error": "No open position found"}
             
@@ -1804,8 +1816,8 @@ class HyperliquidConnector(BaseConnector):
             logger.error(f"❌ Error updating SL to breakeven: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
-    async def _get_position_size(self, api_key: str, api_secret: str, symbol: str, testnet: bool = False) -> float:
-        """Get current position size from exchange"""
+    async def _get_position_size_from_api(self, api_key: str, api_secret: str, symbol: str, testnet: bool = False) -> float:
+        """Get current position size from exchange using direct API call"""
         try:
             url = f"{self._get_base_url(testnet)}/info"
             

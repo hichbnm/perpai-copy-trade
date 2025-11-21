@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 import logging
 import os
+from typing import Dict
 from database.db_manager import DatabaseManager
 from signal_parser.parser import SignalParser
 from connectors.hyperliquid_connector import HyperliquidConnector
@@ -420,7 +421,11 @@ class TradingBot(commands.Bot):
                     user_mappings.append({
                         'user_id': user_id,
                         'size': user['position_size'],
-                        'db_trade_id': db_trade_id
+                        'db_trade_id': db_trade_id,
+                        'exchange': exchange,
+                        'api_key': user.get('api_key'),
+                        'api_secret': user.get('api_secret'),
+                        'testnet': user.get('testnet', False)
                     })
                     
                     successful_trades += 1
@@ -429,8 +434,10 @@ class TradingBot(commands.Bot):
                     if result.get('live'):
                         live_trades = True
                     
+                    # Send private DM notification to user
+                    await self._send_trade_execution_dm(user_id, signal, result, exchange, trade_mode)
+                    
                     # Log successful trades with mode indication
-                    trade_mode = "🔴 LIVE" if result.get('live') else "🔵 SIMULATED"
                     logger.info(f"✅ Trade successfully executed for user {user_id} on {exchange} ({trade_mode})")
                 else:
                     # Trade failed - log the detailed error
@@ -477,6 +484,79 @@ class TradingBot(commands.Bot):
             'live_trades': live_trades
         }
     
+    async def _send_trade_execution_dm(self, user_id: int, signal: Dict, result: Dict, exchange: str, trade_mode: str):
+        """Send private DM notification when trade is executed"""
+        try:
+            # Fetch Discord user
+            discord_user = self.get_user(int(user_id))
+            if not discord_user:
+                try:
+                    discord_user = await self.fetch_user(int(user_id))
+                except Exception as fetch_error:
+                    logger.warning(f"⚠️ Cannot fetch user {user_id} for trade notification: {fetch_error}")
+                    return
+            
+            # Extract trade details
+            symbol = signal.get('symbol', 'Unknown')
+            side = signal.get('side', 'unknown').upper()
+            
+            # Get entry price
+            entry_values = signal.get('entry', [])
+            if entry_values:
+                entry_price = entry_values[0] if isinstance(entry_values, list) else entry_values
+            else:
+                entry_price = result.get('price', 0)
+            
+            # Get quantity/size from result
+            quantity = result.get('quantity', 0)
+            position_value = result.get('position_size', 0)
+            
+            # Get leverage
+            leverage = signal.get('leverage', 1)
+            
+            # Get TP/SL
+            take_profits = signal.get('take_profit', [])
+            stop_losses = signal.get('stop_loss', [])
+            
+            tp_text = ', '.join([f"${tp:.2f}" for tp in take_profits]) if take_profits else 'None'
+            sl_text = f"${stop_losses[0]:.2f}" if stop_losses else 'None'
+            
+            # Side emoji
+            side_emoji = "🟢" if side == 'BUY' else "🔴"
+            
+            # Build notification
+            dm_notification = (
+                f"✅ **YOUR TRADE EXECUTED** {trade_mode}\n\n"
+                f"{side_emoji} **{symbol}** {side}\n"
+                f"💰 Entry Price: **${entry_price:.2f}**\n"
+                f"📊 Quantity: **{quantity:.6f}**\n"
+            )
+            
+            if position_value > 0:
+                dm_notification += f"💵 Position Value: **${position_value:.2f}**\n"
+            
+            dm_notification += (
+                f"⚡ Leverage: **{leverage}x**\n"
+                f"🎯 Take Profits: {tp_text}\n"
+                f"🛑 Stop Loss: {sl_text}\n"
+                f"🏦 Exchange: **{exchange.capitalize()}**\n\n"
+                f"📡 Your position is now being monitored...\n"
+                f"💬 You'll receive DMs when TP/SL hits!\n\n"
+                f"📊 Use `/dashboard` to view all your trades"
+            )
+            
+            # Send DM
+            try:
+                await discord_user.send(dm_notification)
+                logger.info(f"✅ Sent trade execution notification to user {user_id}")
+            except discord.Forbidden:
+                logger.warning(f"⚠️ Cannot send DM to user {user_id} (DMs disabled)")
+            except Exception as dm_error:
+                logger.error(f"❌ Failed to send trade notification DM to user {user_id}: {dm_error}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error in _send_trade_execution_dm: {e}", exc_info=True)
+    
     async def send_private_errors(self, errors, channel_id):
         """Send private error messages to users"""
         if not errors:
@@ -509,6 +589,19 @@ class TradingBot(commands.Bot):
                         
                         # Send private notification to user
                         try:
+                            # Skip certain technical errors that users don't need to see
+                            skip_errors = [
+                                "asset ",
+                                  # Internal exchange error code
+                            ]
+                            
+                            # Check if this error should be skipped
+                            should_skip = any(skip_phrase in error_msg.lower() for skip_phrase in skip_errors)
+                            
+                            if should_skip:
+                                logger.info(f"⏭️ Skipping internal error notification for user {user_id}: {error_msg[:50]}...")
+                                continue
+                            
                             # Format error message based on type
                             if "Symbol Not Available" in error_msg or "not available" in error_msg.lower():
                                 notification = (
