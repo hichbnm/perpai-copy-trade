@@ -37,10 +37,14 @@ async def check_api_key_required(interaction: discord.Interaction, bot) -> bool:
             f"3️⃣ All dashboard features will be unlocked\n\n"
             f"**🔐 Supported Exchanges:**\n"
             f"• Hyperliquid (Mainnet Only)\n"
-            f"• Bybit (Mainnet & Testnet)\n\n"
+            f"• Bybit (Mainnet & Testnet)\n"
+            f"• Binance Futures (Mainnet & Testnet)\n"
+            f"• OKX Perpetuals (Mainnet & Demo)\n\n"
             f"**✅ Get Started:**\n"
             f"Hyperliquid: `/add_api_key exchange:hyperliquid api_key:YOUR_WALLET api_secret:YOUR_KEY`\n"
-            f"Bybit: `/add_api_key exchange:bybit api_key:YOUR_KEY api_secret:YOUR_SECRET`\n\n"
+            f"Bybit: `/add_api_key exchange:bybit api_key:YOUR_KEY api_secret:YOUR_SECRET`\n"
+            f"Binance: `/add_api_key exchange:binance api_key:YOUR_KEY api_secret:YOUR_SECRET`\n"
+            f"OKX: `/add_api_key exchange:okx api_key:YOUR_KEY api_secret:YOUR_SECRET passphrase:YOUR_PASS`\n\n"
             f"💡 Your credentials are encrypted and stored securely"
         )
         
@@ -73,7 +77,8 @@ class BackToDashboardView(discord.ui.View):
             f"**🏦 Supported Exchanges:**\n"
             f"▸ **Hyperliquid** (Active & Tested - Mainnet Only)\n"
             f"▸ **Bybit** (Active & Tested - Mainnet & Testnet)\n"
-            f"▸ More exchanges coming soon...\n\n"
+            f"▸ **Binance Futures** (Active & Tested)\n"
+            f"▸ **OKX Perpetuals** (Active & Tested)\n\n"
             f"**🚀 Quick Start Guide:**\n"
             f"1️⃣ Click **Setup** to add your API key\n"
             f"2️⃣ Subscribe to signal channels\n"
@@ -150,6 +155,11 @@ class DashboardView(discord.ui.View):
 
 📋 **View Settings**
    Review your current configuration
+
+**⚠️ IMPORTANT - Binance API Setup:**
+📌 **Enable Futures Trading** permission when creating API key
+📌 **Whitelist IP:** `34.104.147.103`
+📌 Generate API key from **Futures** account (not Spot)
 
 **🔒 Security Features:**
 ▸ All credentials are encrypted
@@ -411,7 +421,18 @@ class ExchangeDropdown(discord.ui.Select):
                 emoji="🟡",
                 value="bybit"
             ),
-            # More exchanges coming soon
+            discord.SelectOption(
+                label="Binance Futures",
+                description="Largest crypto futures exchange",
+                emoji="🟠",
+                value="binance"
+            ),
+            discord.SelectOption(
+                label="OKX Perpetuals",
+                description="Global perpetual swaps exchange",
+                emoji="🔵",
+                value="okx"
+            ),
         ]
         
         super().__init__(
@@ -591,7 +612,7 @@ class ChangeAPIKeyDropdown(discord.ui.Select):
         self.api_keys = api_keys
         
         # Show ALL available exchanges (not just ones user has)
-        all_exchanges = ['hyperliquid', 'bybit']
+        all_exchanges = ['hyperliquid', 'bybit', 'binance', 'okx']
         
         # Check which exchanges user currently has
         user_exchanges = {exchange.lower(): testnet for exchange, testnet in api_keys}
@@ -935,7 +956,14 @@ class SetupView(discord.ui.View):
                 "🔑 **Add API Key**\n\n"
                 "Select the exchange you want to add credentials for:\n\n"
                 "**Available Exchanges:**\n"
-                "🏦 Hyperliquid - Decentralized perpetual futures\n\n"
+                "🏦 Hyperliquid - Decentralized perpetual futures\n"
+                "🏦 Bybit - Futures trading\n"
+                "🏦 Binance - Futures trading\n"
+                "🏦 OKX - Perpetual trading\n\n"
+                "**⚠️ IMPORTANT - Binance API Setup:**\n"
+                "📌 **Enable Futures Trading** permission when creating API key\n"
+                "📌 **Whitelist IP:** `34.104.147.103`\n"
+                "📌 Generate API key from **Futures** account (not Spot)\n\n"
                 "Choose an exchange from the dropdown below to continue."
             )
             
@@ -959,7 +987,14 @@ class SetupView(discord.ui.View):
                     "🔄 **Change/Add API Key**\n\n"
                     "You can add your first API key here:\n\n"
                     "**🏦 Available Exchanges:**\n"
-                    "• Hyperliquid (Mainnet)\n\n"
+                    "• Hyperliquid (Mainnet)\n"
+                    "• Bybit (Mainnet & Testnet)\n"
+                    "• Binance Futures (Mainnet & Testnet)\n"
+                    "• OKX Perpetuals (Mainnet & Demo)\n\n"
+                    "**⚠️ IMPORTANT - Binance API Setup:**\n"
+                    "📌 **Enable Futures Trading** permission when creating API key\n"
+                    "📌 **Whitelist IP:** `34.104.147.103`\n"
+                    "📌 Generate API key from **Futures** account (not Spot)\n\n"
                     "**⚠️ Important:**\n"
                     "• Only ONE exchange API key can be active at a time\n"
                     "• Adding a new key will replace the current one\n"
@@ -1006,7 +1041,14 @@ class SetupView(discord.ui.View):
             
             message += (
                 "**🏦 Available Exchanges:**\n"
-                "• Hyperliquid (Mainnet)\n\n"
+                "• Hyperliquid (Mainnet)\n"
+                "• Bybit (Mainnet & Testnet)\n"
+                "• Binance Futures (Mainnet & Testnet)\n"
+                "• OKX Perpetuals (Mainnet & Demo)\n\n"
+                "**⚠️ IMPORTANT - Binance API Setup:**\n"
+                "📌 **Enable Futures Trading** permission when creating API key\n"
+                "📌 **Whitelist IP:** `34.104.147.103`\n"
+                "📌 Generate API key from **Futures** account (not Spot)\n\n"
                 "**⚠️ Important:**\n"
                 "• Only ONE exchange API key is kept active at a time\n"
                 "• Switching exchanges will replace the current key\n"
@@ -1362,7 +1404,8 @@ class SetupView(discord.ui.View):
             f"**🏦 Supported Exchanges:**\n"
             f"▸ **Hyperliquid** (Active & Tested - Mainnet Only)\n"
             f"▸ **Bybit** (Active & Tested - Mainnet & Testnet)\n"
-            f"▸ More exchanges coming soon...\n\n"
+            f"▸ **Binance Futures** (Active & Tested)\n"
+            f"▸ **OKX Perpetuals** (Active & Tested)\n\n"
             f"**🚀 Quick Start Guide:**\n"
             f"1️⃣ Click **Setup** to add your API key\n"
             f"2️⃣ Subscribe to signal channels\n"
@@ -1564,7 +1607,8 @@ class TradingView(discord.ui.View):
             f"🔍 **Real-time Monitoring** - Live price tracking and alerts\n\n"
             f"**🏦 Supported Exchanges:**\n"
             f"▸ **Hyperliquid** (Active & Tested)\n"
-            f"▸ More exchanges coming soon...\n\n"
+            f"▸ **Binance Futures** (Active & Tested)\n"
+            f"▸ **OKX Perpetuals** (Active & Tested)\n\n"
             f"**🚀 Quick Start Guide:**\n"
             f"1️⃣ Click **Setup** to add your API key\n"
             f"2️⃣ Subscribe to signal channels\n"
@@ -1883,7 +1927,8 @@ class AnalyticsView(discord.ui.View):
             f"🔍 **Real-time Monitoring** - Live price tracking and alerts\n\n"
             f"**🏦 Supported Exchanges:**\n"
             f"▸ **Hyperliquid** (Active & Tested)\n"
-            f"▸ More exchanges coming soon...\n\n"
+            f"▸ **Binance Futures** (Active & Tested)\n"
+            f"▸ **OKX Perpetuals** (Active & Tested)\n\n"
             f"**🚀 Quick Start Guide:**\n"
             f"1️⃣ Click **Setup** to add your API key\n"
             f"2️⃣ Subscribe to signal channels\n"
@@ -2722,16 +2767,30 @@ class APIKeyModal(discord.ui.Modal):
             self.add_item(self.private_key)
         else:
             # Other exchanges use API key and secret
+            # Add different placeholders based on exchange
+            if exchange.lower() == 'binance':
+                api_key_placeholder = "Your Binance Futures API key"
+                api_secret_placeholder = "Your Binance Futures API secret"
+            elif exchange.lower() == 'okx':
+                api_key_placeholder = "Your OKX API key"
+                api_secret_placeholder = "Your OKX API secret"
+            elif exchange.lower() == 'bybit':
+                api_key_placeholder = "Your Bybit API key"
+                api_secret_placeholder = "Your Bybit API secret"
+            else:
+                api_key_placeholder = "Your API key"
+                api_secret_placeholder = "Your API secret"
+            
             self.api_key = discord.ui.TextInput(
                 label="API Key",
-                placeholder="Your API key",
+                placeholder=api_key_placeholder,
                 max_length=200,
                 required=True
             )
             
             self.api_secret = discord.ui.TextInput(
                 label="API Secret", 
-                placeholder="Your API secret",
+                placeholder=api_secret_placeholder,
                 max_length=200,
                 required=True,
                 style=discord.TextStyle.paragraph
@@ -2748,12 +2807,23 @@ class APIKeyModal(discord.ui.Modal):
             is_testnet = False
             exchange_name = self.selected_exchange.lower()
             
-            # Send initial validating message
-            await interaction.response.send_message(
-                "🔄 **Validating Credentials...**\n\n"
-                "⏳ Please wait while we verify your API key with the exchange...",
-                ephemeral=True
-            )
+            # Send initial validating message with exchange-specific instructions
+            if exchange_name == 'binance':
+                validation_msg = (
+                    "🔄 **Validating Binance Credentials...**\n\n"
+                    "⏳ Please wait while we verify your API key...\n\n"
+                    "**⚠️ If validation fails, ensure:**\n"
+                    "📌 **Futures Trading** permission is enabled\n"
+                    "📌 IP `34.104.147.103` is whitelisted\n"
+                    "📌 API key is from **Futures** account (not Spot)"
+                )
+            else:
+                validation_msg = (
+                    "🔄 **Validating Credentials...**\n\n"
+                    "⏳ Please wait while we verify your API key with the exchange..."
+                )
+            
+            await interaction.response.send_message(validation_msg, ephemeral=True)
             
             # Handle Hyperliquid with validation
             if exchange_name == 'hyperliquid':
@@ -3316,7 +3386,8 @@ class CleanUICommands(commands.Cog):
             # Add exchange support
             exchanges = (
                 "▸ **Hyperliquid** (Active & Tested)\n"
-                "▸ More exchanges coming soon..."
+                "▸ **Binance Futures** (Active & Tested)\n"
+                "▸ **OKX Perpetuals** (Active & Tested)"
             )
             
             embed.add_field(
@@ -3783,8 +3854,12 @@ See which channels you're currently subscribed to
 • Use `/quick_subscribe` to subscribe to this channel
 • Use `/dashboard` for full interactive dashboard"""
         
-        view = SetupView(self.bot)
-        await interaction.response.send_message(setup_text, view=view, ephemeral=True)
+        try:
+            view = SetupView(self.bot)
+            await interaction.response.send_message(setup_text, view=view, ephemeral=True)
+        except Exception as e:
+            # Fallback if view fails
+            await interaction.response.send_message(setup_text, ephemeral=True)
     
     @discord.ui.button(label="💰 Trading", style=discord.ButtonStyle.success, emoji="💰", custom_id="persistent_trading")
     async def trading_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3937,7 +4012,7 @@ LEVERAGE: 10x
 
 🏦 **Supported Exchanges**
 • Hyperliquid (Primary)
-• More exchanges coming soon...
+• Binance Futures** (Active & Tested)\n            f"▸ **OKX Perpetuals** (Active & Tested
 
 🆘 **Need Help?**
 • Use `/dashboard` for full interactive interface

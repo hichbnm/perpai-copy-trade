@@ -30,6 +30,14 @@ class Config:
     BYBIT_BASE_URL = os.getenv('BYBIT_BASE_URL', 'https://api.bybit.com')
     BYBIT_TESTNET_URL = os.getenv('BYBIT_TESTNET_URL', 'https://api-testnet.bybit.com')
     
+    # Binance URLs
+    BINANCE_BASE_URL = os.getenv('BINANCE_BASE_URL', 'https://fapi.binance.com')
+    BINANCE_TESTNET_URL = os.getenv('BINANCE_TESTNET_URL', 'https://testnet.binancefuture.com')
+    
+    # OKX URLs
+    OKX_BASE_URL = os.getenv('OKX_BASE_URL', 'https://www.okx.com')
+    OKX_TESTNET_URL = os.getenv('OKX_TESTNET_URL', 'https://www.okx.com')
+    
     # Trading settings
     DEFAULT_POSITION_SIZE = float(os.getenv('DEFAULT_POSITION_SIZE', 1.0))
     DEFAULT_MAX_RISK = float(os.getenv('DEFAULT_MAX_RISK', 2.0))

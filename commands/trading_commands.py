@@ -46,15 +46,18 @@ You cannot use this bot. If you believe this is a mistake, please contact the ad
 
 🔐 **Supported Exchanges**:
 • Hyperliquid (Mainnet Only)
-• Bybit (testnet available)
-• More exchanges coming soon
+• Bybit (Mainnet & Testnet)
+• Binance Futures (Mainnet & Testnet)
+• OKX Perpetuals (Mainnet & Demo)
 
 💡 **Why Required?**
 API keys are needed to execute trades on your behalf. Your credentials are encrypted and stored securely.
 
 ✅ **Get Started**: 
 `/add_api_key exchange:hyperliquid api_key:YOUR_WALLET api_secret:YOUR_PRIVATE_KEY`
-`/add_api_key exchange:bybit api_key:YOUR_API_KEY api_secret:YOUR_API_SECRET`"""
+`/add_api_key exchange:bybit api_key:YOUR_API_KEY api_secret:YOUR_API_SECRET`
+`/add_api_key exchange:binance api_key:YOUR_API_KEY api_secret:YOUR_API_SECRET`
+`/add_api_key exchange:okx api_key:YOUR_API_KEY api_secret:YOUR_API_SECRET passphrase:YOUR_PASSPHRASE`"""
             
             await interaction.response.send_message(setup_text, ephemeral=True)
             return
@@ -73,12 +76,13 @@ class TradingCommands(commands.Cog):
     
     @app_commands.command(name="add_api_key", description="Add your API key for trading")
     @app_commands.describe(
-        exchange="The exchange name (e.g., hyperliquid, bybit)",
+        exchange="The exchange name (hyperliquid, bybit, binance, okx)",
         api_key="Your API key or wallet address",
-        api_secret="Your API secret or private key"
+        api_secret="Your API secret or private key",
+        passphrase="API passphrase (OKX only)"
     )
     async def add_api_key(self, interaction: discord.Interaction, exchange: str, 
-                          api_key: str, api_secret: str):
+                          api_key: str, api_secret: str, passphrase: str = None):
         try:
             # Add user to database
             user_id = str(interaction.user.id)
@@ -107,7 +111,8 @@ class TradingCommands(commands.Cog):
                 user_id, 
                 exchange.lower(), 
                 api_key, 
-                api_secret, 
+                api_secret,
+                api_passphrase=passphrase,
                 testnet=testnet
             )
             

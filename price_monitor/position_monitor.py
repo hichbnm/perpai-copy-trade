@@ -825,6 +825,7 @@ class APIBasedPositionMonitor:
                     exchange = user_map.get('exchange', '').lower()
                     api_key = user_map.get('api_key')
                     api_secret = user_map.get('api_secret')
+                    api_passphrase = user_map.get('passphrase', '')  # For OKX
                     testnet = user_map.get('testnet', False)
                     
                     if not api_key or not api_secret:
@@ -848,7 +849,7 @@ class APIBasedPositionMonitor:
                             logger.info(f"✅ Bybit: Moved SL to breakeven for user {user_id}")
                             success_count += 1
                         else:
-                            logger.warning(f"⚠️ Bybit: Failed to move SL for user {user_id}: {result.get('error')}")
+                            logger.warning(f"⚠️ {exchange.capitalize()}: Failed to move SL for user {user_id}: {result.get('error')}")
                             failed_count += 1
                             
                     elif exchange == 'hyperliquid':
@@ -869,6 +870,48 @@ class APIBasedPositionMonitor:
                         else:
                             logger.warning(f"⚠️ Hyperliquid: Failed to move SL for user {user_id}: {result.get('error')}")
                             failed_count += 1
+                    
+                    elif exchange == 'binance':
+                        # For Binance, use the update method
+                        from connectors.binance_connector import BinanceConnector
+                        connector = BinanceConnector()
+                        result = await connector.update_stop_loss_to_breakeven(
+                            symbol=symbol,
+                            entry_price=entry_price,
+                            side=side,
+                            api_key=api_key,
+                            api_secret=api_secret,
+                            testnet=testnet
+                        )
+                        
+                        if result.get('success'):
+                            logger.info(f"✅ Binance: Moved SL to breakeven for user {user_id}")
+                            success_count += 1
+                        else:
+                            logger.warning(f"⚠️ Binance: Failed to move SL for user {user_id}: {result.get('error')}")
+                            failed_count += 1
+                    
+                    elif exchange == 'okx':
+                        # For OKX, use the update method with passphrase
+                        from connectors.okx_connector import OKXConnector
+                        connector = OKXConnector()
+                        result = await connector.update_stop_loss_to_breakeven(
+                            symbol=symbol,
+                            entry_price=entry_price,
+                            side=side,
+                            api_key=api_key,
+                            api_secret=api_secret,
+                            passphrase=api_passphrase,
+                            testnet=testnet
+                        )
+                        
+                        if result.get('success'):
+                            logger.info(f"✅ OKX: Moved SL to breakeven for user {user_id}")
+                            success_count += 1
+                        else:
+                            logger.warning(f"⚠️ OKX: Failed to move SL for user {user_id}: {result.get('error')}")
+                            failed_count += 1
+                    
                     else:
                         logger.warning(f"⚠️ Unknown exchange '{exchange}' for user {user_id}")
                         failed_count += 1

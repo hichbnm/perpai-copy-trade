@@ -8,6 +8,8 @@ from database.db_manager import DatabaseManager
 from signal_parser.parser import SignalParser
 from connectors.hyperliquid_connector import HyperliquidConnector
 from connectors.bybit_connector import BybitConnector
+from connectors.binance_connector import BinanceConnector
+from connectors.okx_connector import OKXConnector
 from commands.trading_commands import TradingCommands
 from ui.clean_ui import CleanUICommands
 from price_monitor.signal_service import SignalBasedTradeService
@@ -31,9 +33,8 @@ class TradingBot(commands.Bot):
         self.connectors = {
             'hyperliquid': HyperliquidConnector(),
             'bybit': BybitConnector(),
-            # Add new exchanges here:
-            # 'binance': BinanceConnector(),
-            # 'okx': OKXConnector(),
+            'binance': BinanceConnector(),
+            'okx': OKXConnector(),
         }
         self.trade_monitor = SignalBasedTradeService(self, self.db)
         
@@ -425,6 +426,7 @@ class TradingBot(commands.Bot):
                         'exchange': exchange,
                         'api_key': user.get('api_key'),
                         'api_secret': user.get('api_secret'),
+                        'passphrase': user.get('api_passphrase', ''),  # For OKX
                         'testnet': user.get('testnet', False)
                     })
                     

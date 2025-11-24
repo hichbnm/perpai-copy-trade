@@ -2,7 +2,7 @@
 from .base_connector import BaseConnector
 from .hyperliquid_connector import HyperliquidConnector
 from .bybit_connector import BybitConnector
-# Add new exchange here:
-# from .binance_connector import BinanceConnector
+from .binance_connector import BinanceConnector
+from .okx_connector import OKXConnector
 
-__all__ = ['BaseConnector', 'HyperliquidConnector', 'BybitConnector']
+__all__ = ['BaseConnector', 'HyperliquidConnector', 'BybitConnector', 'BinanceConnector', 'OKXConnector']
